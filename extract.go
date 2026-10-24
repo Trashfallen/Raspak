@@ -285,8 +285,9 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 	}
 
 	parallelZip := a.isZip && files > 1
-	// замеры: дальше 8-16 потоков быстрее не становится - упирается в Windows
-	workers := min(max(runtime.NumCPU(), 4), 16, max(files, 1))
+	// замеры: создание файла (CreateFile с проверкой антивирусом) в Windows идет
+	// почти по очереди; zip быстрее всего на 2-4 потоках, 7z - на 6-8
+	workers := min(max(runtime.NumCPU(), 2), 6, max(files, 1))
 	if files < 2 || opt.Test && !parallelZip {
 		workers = 1
 	}

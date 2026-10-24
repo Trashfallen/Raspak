@@ -24,5 +24,5 @@ func TestBenchExtract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("распаковка: %v, %d файлов, %s", time.Since(start), res.Files, formatSize(res.Bytes))
+	t.Logf("распаковка: %v, %d файлов, %s, блоков LZMA2: %d", time.Since(start), res.Files, formatSize(res.Bytes), lzma2Segments.Load())
 }

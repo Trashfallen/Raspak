@@ -14,4 +14,5 @@ root.txt            "root file\n"
 - `secret.7z` (зашифрован и список файлов), `secret-aes.zip` (AES-256), `secret-zc.zip` (ZipCrypto) - пароль `secret`;
 - `split.7z.001`-`.003` - тома по 2 КБ;
 - `root.txt.gz` - одиночный сжатый файл;
+- `blocks.7z` - 20 МБ однообразного текста (`line N alpha bravo charlie`), `7z a -m0=lzma2 -mx1 -md=256k -mmt4`: LZMA2 со многими сбросами словаря для параллельной распаковки;
 - `multi.part01.rar`, `multi.part02.rar` - многотомный rar из тестов [mholt/archives](https://github.com/mholt/archives) (MIT).
