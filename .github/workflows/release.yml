@@ -1,0 +1,41 @@
+# Тег vX.Y.Z -> тесты, сборка Raspak.exe и релиз на GitHub с этим файлом.
+# Установленные копии программы сами найдут релиз и предложат обновиться.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Версия в VERSION совпадает с тегом
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "VERSION = $v, тег = ${{ github.ref_name }}" }
+
+      - name: Тесты
+        run: go test ./...
+
+      - name: Сборка
+        shell: cmd
+        run: build.cmd
+
+      - name: Релиз
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Raspak.exe
+          generate_release_notes: true
