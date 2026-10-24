@@ -212,8 +212,10 @@ func setAssociations(exe string, on bool) error {
 	cmd := `"` + exe + `" "%1"`
 	steps := [][3]string{
 		{prog, "", "Архив"},
-		// значок №1 в exe - «файл-архив»; №0 - программа: иначе архивы не отличить от ярлыка Raspak
-		{prog + `\DefaultIcon`, "", `"` + exe + `",1`},
+		// значок архивов - ресурс #2 (папка с молнией), программа - #1: иначе архивы
+		// не отличить от ярлыка Raspak. Ссылка по ID (-2), а не по номеру: не зависит
+		// от порядка значков в exe и не цепляет старую картинку из кэша значков
+		{prog + `\DefaultIcon`, "", `"` + exe + `",-2`},
 		{prog + `\shell\open\command`, "", cmd},
 		{classesKey + `\Applications\` + filepath.Base(exe) + `\shell\open\command`, "", cmd},
 		{capsKey, "ApplicationName", appName},
