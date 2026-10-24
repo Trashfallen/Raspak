@@ -101,9 +101,25 @@ func setContextMenu(exe string, on bool) error {
 	}
 	for _, ext := range archiveExts {
 		key := classesKey + `\SystemFileAssociations\` + ext + `\shell\` + appName
+		// запасное «Открыть»: если программа по умолчанию удалена (UserChoice
+		// указывает на несуществующий класс), проводник иначе делает действием
+		// по умолчанию подменю «Raspak», и двойной клик ничего не открывает.
+		// Живая программа по умолчанию со своим «open» этот пункт перекрывает.
+		open := classesKey + `\SystemFileAssociations\` + ext + `\shell\open`
+		if strings.Contains(strings.ToLower(regGet(open+`\command`, "")), strings.ToLower(filepath.Base(exe))) {
+			regDeleteTree(open)
+		}
 		regDeleteTree(key)
 		if !on {
 			continue
+		}
+		if regGet(open+`\command`, "") == "" {
+			if err := regSet(open, "Icon", q+",0"); err != nil {
+				return err
+			}
+			if err := regSet(open+`\command`, "", q+` "%1"`); err != nil {
+				return err
+			}
 		}
 		for _, v := range [][2]string{{"MUIVerb", appName}, {"Icon", q + ",0"}, {"SubCommands", ""}} {
 			if err := regSet(key, v[0], v[1]); err != nil {
