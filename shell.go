@@ -117,8 +117,13 @@ func writeCascade(key, exe, appliesTo string, items [][3]string) error {
 
 // setContextMenu: подменю «Raspak» в классическом контекстном меню: на архивах -
 // распаковка, на остальных файлах и папках - упаковка. В Windows 11 оно в
-// «Показать дополнительные параметры» (Shift+F10), там же новое меню свое.
-func setContextMenu(exe string, on bool) error {
+// «Показать дополнительные параметры» (Shift+F10).
+//
+// withPackage: стоит пакет меню Windows 11. Его пункт на файлах и архивах
+// проводник показывает и в классическом меню - тогда реестровые подменю для
+// файлов и архивов не пишем, иначе «Raspak» будет дважды. На папках пакетный
+// пункт в классическое меню не попадает, там подменю из реестра остается.
+func setContextMenu(exe string, on, withPackage bool) error {
 	q := `"` + exe + `"`
 	addDialog := [3]string{"5adddialog", "Добавить в архив…", q + ` --add-dialog "%1"`}
 	items := [][3]string{
@@ -140,11 +145,12 @@ func setContextMenu(exe string, on bool) error {
 	appliesTo := "NOT (" + strings.Join(notArchive, " OR ") + ")"
 	for _, k := range []string{classesKey + `\*\shell\` + appName, classesKey + `\Directory\shell\` + appName} {
 		regDeleteTree(k)
-		if !on {
+		dir := strings.Contains(k, `\Directory\`)
+		if !on || withPackage && !dir {
 			continue
 		}
 		at := appliesTo
-		if strings.Contains(k, `\Directory\`) {
+		if dir {
 			at = ""
 		}
 		if err := writeCascade(k, exe, at, packItems); err != nil {
@@ -172,6 +178,9 @@ func setContextMenu(exe string, on bool) error {
 			if err := regSet(open+`\command`, "", q+` "%1"`); err != nil {
 				return err
 			}
+		}
+		if withPackage {
+			continue
 		}
 		if err := writeCascade(key, exe, "", items); err != nil {
 			return err

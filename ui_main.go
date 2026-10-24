@@ -557,6 +557,7 @@ func (mw *mainWindow) askMenuUpdate() {
 	}
 	mw.cfg.setMenuPkg(menuPkgStamp(exe))
 	_ = mw.cfg.Save()
+	_ = setContextMenu(exe, true, true)
 	offerExplorerRestart(mw)
 }
 

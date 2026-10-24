@@ -16,9 +16,6 @@ import (
 func applyIntegration(cfg *Config, menu, assoc bool) error {
 	exe := exePath()
 	var errs []error
-	if err := setContextMenu(exe, menu); err != nil {
-		errs = append(errs, err)
-	}
 	if win11Menu() {
 		if menu {
 			if err := registerMenuPackage(exe, true); err != nil {
@@ -33,6 +30,10 @@ func applyIntegration(cfg *Config, menu, assoc bool) error {
 			cfg.setMenuPkg("")
 		}
 	}
+	// после пакета: от него зависит, какие подменю нужны в реестре
+	if err := setContextMenu(exe, menu, hasMenuPackage(cfg)); err != nil {
+		errs = append(errs, err)
+	}
 	if err := setAssociations(exe, assoc); err != nil {
 		errs = append(errs, err)
 	}
@@ -41,6 +42,9 @@ func applyIntegration(cfg *Config, menu, assoc bool) error {
 
 // menuPkgStamp: пакет меню надо перерегистрировать, если сменилась версия или папка exe.
 func menuPkgStamp(exe string) string { return menuPkgVersion + "|" + exe }
+
+// hasMenuPackage: стоит пакет меню Windows 11 (пусть и прошлой версии).
+func hasMenuPackage(cfg *Config) bool { return win11Menu() && cfg.menuPkg() != "" }
 
 // syncIntegration при запуске обновляет пути к exe в реестре и пакет меню
 // (программу могли перенести или обновить). Тихо, в фоне; если пакет надо
@@ -52,7 +56,6 @@ func syncIntegration(cfg *Config, needResign func()) {
 	go func() {
 		exe := exePath()
 		if cfg.ContextMenu {
-			_ = setContextMenu(exe, true)
 			if win11Menu() && cfg.menuPkg() != menuPkgStamp(exe) {
 				switch err := registerMenuPackage(exe, false); {
 				case err == nil:
@@ -61,6 +64,7 @@ func syncIntegration(cfg *Config, needResign func()) {
 					needResign()
 				}
 			}
+			_ = setContextMenu(exe, true, hasMenuPackage(cfg))
 		}
 		if cfg.Associations {
 			_ = setAssociations(exe, true)
