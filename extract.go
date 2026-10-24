@@ -597,7 +597,10 @@ func uniquePath(p string) string {
 // userError - текст ошибки для окна.
 func userError(err error) string {
 	var we *writeError
+	var ve *volumesError
 	switch {
+	case errors.As(err, &ve):
+		return ve.Error()
 	case errors.Is(err, errNeedPassword), errors.Is(err, errBadPassword), errors.Is(err, errNotArchive):
 		return err.Error()
 	case errors.As(err, &we):

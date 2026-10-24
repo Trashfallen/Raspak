@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -95,6 +96,9 @@ func (e errReadCloser) Close() error             { return nil }
 // OpenArchive определяет формат и читает список файлов.
 func OpenArchive(ctx context.Context, path, password string, read *atomic.Int64) (*Archive, error) {
 	path = firstVolume(path)
+	if err := checkVolumes(path); err != nil {
+		return nil, err
+	}
 	a := &Archive{Path: path, Password: password, Name: filepath.Base(path)}
 	src, err := openSource(path, nil)
 	if err != nil {
@@ -355,6 +359,10 @@ func (a *Archive) mapErr(err error) error {
 	case errors.Is(err, zip.ErrAlgorithm):
 		return errors.New("метод сжатия этого файла не поддерживается")
 	case errors.Is(err, rardecode.ErrMultiVolume), errors.Is(err, os.ErrNotExist) && a.Kind == "RAR":
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			return errors.New("не хватает следующего тома архива: " + filepath.Base(pe.Path))
+		}
 		return errors.New("не хватает следующего тома архива")
 	}
 	// с паролем сбой контрольной суммы или распаковки почти всегда значит неверный пароль
@@ -461,6 +469,115 @@ func firstVolume(path string) string {
 		}
 	}
 	return path
+}
+
+// volumeKey - один ключ на весь набор томов (имя первого тома, без учета
+// регистра): «x.part3.rar» и «x.part1.rar» - одно и то же задание.
+func volumeKey(path string) string {
+	dir, base := filepath.Split(path)
+	if m := rarPartRe.FindStringSubmatch(base); m != nil {
+		base = m[1] + fmt.Sprintf("%0*d", len(m[2]), 1) + m[3]
+	} else if volumeRe.MatchString(base) {
+		base = base[:len(base)-3] + "001"
+	}
+	return strings.ToLower(filepath.Join(dir, base))
+}
+
+// uniqueVolumes оставляет по одному файлу на набор томов (порядок сохраняется).
+func uniqueVolumes(paths []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range paths {
+		if k := volumeKey(p); !seen[k] {
+			seen[k] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Окончания недокачанных файлов у торрент-клиентов и браузеров.
+var downloadingSuffixes = []string{".part", ".crdownload", ".!qb", ".!ut", ".!bt", ".aria2", ".download", ".partial", ".tmp"}
+
+// volumesError: в наборе томов есть пропуски.
+type volumesError struct {
+	missing     []string
+	downloading []string // из missing - лежат недокачанными
+}
+
+func (e *volumesError) Error() string {
+	s := "Не хватает томов архива: " + strings.Join(e.missing, ", ") + "."
+	if len(e.downloading) > 0 {
+		s += "\nЕще качаются: " + strings.Join(e.downloading, ", ") + ". Дождитесь конца загрузки."
+	}
+	return s
+}
+
+// checkVolumes проверяет набор «x.partN.rar» или «x.NNN» до распаковки: все
+// тома с 1 до самого большого найденного номера должны лежать рядом.
+// Последний том, которого еще нет совсем, отсюда не виден - о нем скажет
+// распаковка («не хватает следующего тома»).
+func checkVolumes(path string) error {
+	dir, base := filepath.Split(path)
+	var prefix, suffix string
+	width := 3
+	if m := rarPartRe.FindStringSubmatch(base); m != nil {
+		prefix, suffix, width = m[1], m[3], len(m[2])
+	} else if volumeRe.MatchString(base) {
+		prefix = base[:len(base)-3]
+	} else {
+		return nil
+	}
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	have := map[int]bool{}
+	partial := map[int]string{}
+	last := 0
+	lp, ls := strings.ToLower(prefix), strings.ToLower(suffix)
+	for _, e := range entries {
+		name := strings.ToLower(e.Name())
+		if e.IsDir() || !strings.HasPrefix(name, lp) {
+			continue
+		}
+		rest := name[len(lp):]
+		i := 0
+		for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+			i++
+		}
+		n, err := strconv.Atoi(rest[:i])
+		if i == 0 || err != nil || n == 0 {
+			continue
+		}
+		tail := rest[i:]
+		switch {
+		case tail == ls:
+			have[n] = true
+		case strings.HasPrefix(tail, ls) && slices.Contains(downloadingSuffixes, tail[len(ls):]):
+			partial[n] = e.Name()
+		default:
+			continue
+		}
+		last = max(last, n)
+	}
+	var ve volumesError
+	for n := 1; n <= last; n++ {
+		if have[n] {
+			continue
+		}
+		ve.missing = append(ve.missing, prefix+fmt.Sprintf("%0*d", width, n)+suffix)
+		if p, ok := partial[n]; ok {
+			ve.downloading = append(ve.downloading, p)
+		}
+	}
+	if len(ve.missing) > 0 {
+		return &ve
+	}
+	return nil
 }
 
 // archiveStem - имя архива без расширений: «фото.tar.gz» -> «фото», «x.part1.rar» -> «x».

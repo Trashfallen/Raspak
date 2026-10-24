@@ -101,7 +101,7 @@ func takeQueue(leader *windows.Handle) []batchItem {
 
 func runBatch(mode string, files []string) {
 	var items []batchItem
-	for _, f := range files {
+	for _, f := range uniqueVolumes(files) { // выделили все тома - распаковать набор один раз
 		if abs, err := filepath.Abs(f); err == nil {
 			f = abs
 		}
@@ -145,9 +145,23 @@ type batchState struct {
 	errs      []string
 	tested    []string
 	cancelled bool
+	// наборы томов, уже сделанные в этом сеансе: проводник запускает копию
+	// программы на каждый выделенный том, и все они попадают в очередь
+	seen map[string]bool
 }
 
 func (b *batchState) run(items []batchItem) {
+	if b.seen == nil {
+		b.seen = map[string]bool{}
+	}
+	var fresh []batchItem
+	for _, it := range items {
+		if k := it.mode + "|" + volumeKey(it.path); !b.seen[k] {
+			b.seen[k] = true
+			fresh = append(fresh, it)
+		}
+	}
+	items = fresh
 	for i, it := range items {
 		if b.cancelled {
 			return

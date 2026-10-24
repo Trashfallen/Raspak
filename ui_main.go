@@ -123,7 +123,7 @@ func runMain(cfg *Config, files []string) {
 	mw.ShortcutActions().Add(open)
 	mw.restorePlacement()
 
-	if len(files) > 1 {
+	if files = uniqueVolumes(files); len(files) > 1 {
 		mw.Synchronize(func() { mw.batchExtract(files) })
 	} else if len(files) == 1 {
 		mw.Synchronize(func() { mw.open(files[0]) })
@@ -156,6 +156,7 @@ func (mw *mainWindow) openDialog() {
 }
 
 func (mw *mainWindow) onDrop(files []string) {
+	files = uniqueVolumes(files) // все тома одного архива - это один архив
 	if len(files) == 1 {
 		mw.open(files[0])
 		return

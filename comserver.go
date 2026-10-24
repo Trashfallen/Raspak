@@ -303,6 +303,7 @@ func shellItemPaths(arr unsafe.Pointer) []string {
 
 // runMenuItem запускает обычный Raspak.exe с нужным режимом.
 func runMenuItem(idx int, files []string) {
+	files = uniqueVolumes(files)
 	if len(files) == 0 {
 		return
 	}
