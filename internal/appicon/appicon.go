@@ -1,5 +1,10 @@
-// Package appicon рисует значок Raspak: оранжевый квадрат, стрелка вниз в лоток.
-// Им же собираются assets/icon.ico (tools/genicon) и картинки пакета для меню Windows 11.
+// Package appicon рисует значки Raspak:
+//   - программа: оранжевый квадрат, белая коробка-архив с молнией;
+//   - архив (файлы .zip, .rar, .7z...): белый лист с загнутым углом, молния
+//     и оранжевый бегунок - чтобы архив не путался с ярлыком программы.
+//
+// Из них собираются assets/icon.ico, assets/archive.ico (tools/genicon) и
+// картинки пакета меню Windows 11.
 package appicon
 
 import (
@@ -11,28 +16,40 @@ import (
 	"math"
 )
 
-// Render рисует значок size x size со сглаживанием (4x4 выборки на пиксель).
-func Render(size int) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
+type rgba struct{ r, g, b, a float64 }
+
+var (
+	white  = rgba{1, 1, 1, 1}
+	clear  = rgba{}
+	orange = func(t float64) rgba { // #FB923C -> #E1470B сверху вниз
+		return rgba{lerp(0xFB, 0xE1, t) / 255, lerp(0x92, 0x47, t) / 255, lerp(0x3C, 0x0B, t) / 255, 1}
+	}
+)
+
+func hex(c uint32) rgba {
+	return rgba{float64(c>>16&0xff) / 255, float64(c>>8&0xff) / 255, float64(c&0xff) / 255, 1}
+}
+
+// render рисует картинку со сглаживанием: 4x4 выборки на пиксель.
+func render(size int, sample func(x, y float64) rgba) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	const ss = 4
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
 			var r, g, b, a float64
 			for sy := 0; sy < ss; sy++ {
 				for sx := 0; sx < ss; sx++ {
-					x := (float64(px) + (float64(sx)+0.5)/ss) / float64(size)
-					y := (float64(py) + (float64(sy)+0.5)/ss) / float64(size)
-					cr, cg, cb, ca := sample(x, y)
-					r += cr * ca
-					g += cg * ca
-					b += cb * ca
-					a += ca
+					c := sample((float64(px)+(float64(sx)+0.5)/ss)/float64(size), (float64(py)+(float64(sy)+0.5)/ss)/float64(size))
+					r += c.r * c.a
+					g += c.g * c.a
+					b += c.b * c.a
+					a += c.a
 				}
 			}
-			n := float64(ss * ss)
 			if a > 0 {
-				img.SetRGBA(px, py, color.RGBA{
-					R: uint8(r / n * 255), G: uint8(g / n * 255), B: uint8(b / n * 255), A: uint8(a / n * 255),
+				n := float64(ss * ss)
+				img.SetNRGBA(px, py, color.NRGBA{
+					R: uint8(r / a * 255), G: uint8(g / a * 255), B: uint8(b / a * 255), A: uint8(a / n * 255),
 				})
 			}
 		}
@@ -40,37 +57,82 @@ func Render(size int) *image.RGBA {
 	return img
 }
 
-// sample - цвет точки (x, y в долях от 0 до 1), премультипликация не нужна.
-func sample(x, y float64) (r, g, b, a float64) {
-	// фон: скругленный квадрат с вертикальным градиентом
-	if !inRoundRect(x, y, 0.04, 0.04, 0.96, 0.96, 0.2) {
-		return 0, 0, 0, 0
+// Render - значок программы.
+func Render(size int) *image.NRGBA { return render(size, appSample) }
+
+// RenderArchive - значок файлов-архивов.
+func RenderArchive(size int) *image.NRGBA { return render(size, archiveSample) }
+
+func appSample(x, y float64) rgba {
+	if !inRoundRect(x, y, 0.04, 0.04, 0.96, 0.96, 0.22) {
+		return clear
 	}
-	t := (y - 0.04) / 0.92
-	r = lerp(0xFB, 0xE1, t) / 255 // #FB923C -> #E1470B
-	g = lerp(0x92, 0x47, t) / 255
-	b = lerp(0x3C, 0x0B, t) / 255
-	a = 1
-	white := false
-	// стрелка: стержень и наконечник
-	if inRoundRect(x, y, 0.435, 0.16, 0.565, 0.47, 0.03) {
-		white = true
+	bg := orange((y - 0.04) / 0.92)
+	// крышка и короб
+	lid := inRoundRect(x, y, 0.17, 0.25, 0.83, 0.39, 0.045)
+	body := inRoundRect(x, y, 0.21, 0.41, 0.79, 0.81, 0.06)
+	if !lid && !body {
+		return bg
 	}
-	if inTriangle(x, y, 0.27, 0.42, 0.73, 0.42, 0.5, 0.66) {
-		white = true
+	// молния: зубцы через один слева и справа от оси (как на значке архива) и бегунок
+	if y > 0.27 && y < 0.58 {
+		row := int((y - 0.27) / 0.052)
+		dx := x - 0.5
+		if math.Mod(y-0.27, 0.052) < 0.031 && (row%2 == 0 && dx > -0.06 && dx < 0.006 || row%2 == 1 && dx < 0.06 && dx > -0.006) {
+			return bg
+		}
 	}
-	// лоток: левая и правая стенки и дно
-	if inRoundRect(x, y, 0.19, 0.56, 0.29, 0.83, 0.04) || inRoundRect(x, y, 0.71, 0.56, 0.81, 0.83, 0.04) ||
-		inRoundRect(x, y, 0.19, 0.73, 0.81, 0.83, 0.04) {
-		white = true
+	if inRoundRect(x, y, 0.44, 0.57, 0.56, 0.75, 0.035) && !inRoundRect(x, y, 0.477, 0.665, 0.523, 0.715, 0.014) {
+		return bg
 	}
-	if white {
-		return 1, 1, 1, 1
-	}
-	return
+	return white
 }
 
-func lerp(a, b, t float64) float64 { return a + (b-a)*t }
+func archiveSample(x, y float64) rgba {
+	const l, t, r, b, fold = 0.17, 0.05, 0.83, 0.95, 0.2
+	line := hex(0xC6C6C6)
+	paper := hex(0xFFFFFF)
+	// лист с загнутым правым верхним углом
+	inPage := inRoundRect(x, y, l, t, r, b, 0.035) && (x-(r-fold))+(t+fold-y) <= fold+1e-9
+	if !inPage {
+		return clear
+	}
+	border := 0.022
+	inner := inRoundRect(x, y, l+border, t+border, r-border, b-border, 0.02) &&
+		(x-(r-fold))+(t+fold-y) <= fold-border*1.4
+	// загиб
+	if x > r-fold && y < t+fold && (x-(r-fold))+(t+fold-y) >= fold-border*1.4 {
+		if (x-(r-fold))+(t+fold-y) <= fold-border*0.3 {
+			return line
+		}
+		if x-(r-fold) <= y-t {
+			return hex(0xE4E4E4)
+		}
+		return clear
+	}
+	if !inner {
+		return line
+	}
+	c := paper
+	// молния: зубцы через один слева и справа от оси
+	if y > 0.08 && y < 0.6 {
+		row := int((y - 0.08) / 0.055)
+		dx := x - 0.5
+		if math.Mod(y-0.08, 0.055) < 0.033 && (row%2 == 0 && dx > -0.065 && dx < 0.005 || row%2 == 1 && dx < 0.065 && dx > -0.005) {
+			c = hex(0x5B5B5B)
+		}
+	}
+	// оранжевый бегунок
+	if inRoundRect(x, y, 0.41, 0.56, 0.59, 0.82, 0.05) {
+		c = orange((y - 0.56) / 0.26)
+		if inRoundRect(x, y, 0.465, 0.69, 0.535, 0.76, 0.02) {
+			c = paper
+		}
+	}
+	return c
+}
+
+func lerp(a, b, t float64) float64 { return a + (b-a)*math.Max(0, math.Min(1, t)) }
 
 func inRoundRect(x, y, x0, y0, x1, y1, rad float64) bool {
 	if x < x0 || x > x1 || y < y0 || y > y1 {
@@ -81,26 +143,28 @@ func inRoundRect(x, y, x0, y0, x1, y1, rad float64) bool {
 	return (x-cx)*(x-cx)+(y-cy)*(y-cy) <= rad*rad
 }
 
-func inTriangle(x, y, ax, ay, bx, by, cx, cy float64) bool {
-	s := func(px, py, qx, qy, rx, ry float64) float64 { return (px-rx)*(qy-ry) - (qx-rx)*(py-ry) }
-	d1, d2, d3 := s(x, y, ax, ay, bx, by), s(x, y, bx, by, cx, cy), s(x, y, cx, cy, ax, ay)
-	neg := d1 < 0 || d2 < 0 || d3 < 0
-	pos := d1 > 0 || d2 > 0 || d3 > 0
-	return !(neg && pos)
-}
-
-// PNG - значок size x size в PNG.
-func PNG(size int) []byte {
+func encodePNG(img image.Image) []byte {
 	var buf bytes.Buffer
-	_ = png.Encode(&buf, Render(size))
+	_ = png.Encode(&buf, img)
 	return buf.Bytes()
 }
 
-// ICO собирает .ico из PNG нужных размеров (Windows Vista+ читает PNG внутри ico).
-func ICO(sizes ...int) []byte {
+// PNG - значок программы size x size.
+func PNG(size int) []byte { return encodePNG(Render(size)) }
+
+// ArchivePNG - значок архива size x size.
+func ArchivePNG(size int) []byte { return encodePNG(RenderArchive(size)) }
+
+// ICO собирает .ico программы из PNG нужных размеров (Windows Vista+ читает PNG в ico).
+func ICO(sizes ...int) []byte { return ico(PNG, sizes) }
+
+// ArchiveICO - .ico для файлов-архивов.
+func ArchiveICO(sizes ...int) []byte { return ico(ArchivePNG, sizes) }
+
+func ico(draw func(int) []byte, sizes []int) []byte {
 	var imgs [][]byte
 	for _, s := range sizes {
-		imgs = append(imgs, PNG(s))
+		imgs = append(imgs, draw(s))
 	}
 	var buf bytes.Buffer
 	binary.Write(&buf, binary.LittleEndian, [3]uint16{0, 1, uint16(len(sizes))})

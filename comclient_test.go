@@ -181,14 +181,17 @@ func TestClassicMenu(t *testing.T) {
 	}
 }
 
-// TestApplyClassicMenu переписывает классическое меню так же, как программа
-// при запуске (меню включено, пакет Windows 11 стоит). RASPAK_APPLYMENU=путь к Raspak.exe.
+// TestApplyClassicMenu переписывает классическое меню и ассоциации так же, как
+// программа при запуске (все включено, пакет Windows 11 стоит). RASPAK_APPLYMENU=путь к Raspak.exe.
 func TestApplyClassicMenu(t *testing.T) {
 	exe := os.Getenv("RASPAK_APPLYMENU")
 	if exe == "" {
 		t.Skip("RASPAK_APPLYMENU не задан")
 	}
 	if err := setContextMenu(exe, true, win11Menu()); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAssociations(exe, true); err != nil {
 		t.Fatal(err)
 	}
 }
