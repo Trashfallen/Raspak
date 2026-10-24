@@ -1,7 +1,7 @@
 // Package appicon рисует значки Raspak:
 //   - программа: оранжевый квадрат, белая коробка-архив с молнией;
-//   - архив (файлы .zip, .rar, .7z...): белый лист с загнутым углом, молния
-//     и оранжевый бегунок - чтобы архив не путался с ярлыком программы.
+//   - архив (файлы .zip, .rar, .7z...): оранжевая папка с молнией, как сжатые
+//     папки Windows - чтобы архив не путался с ярлыком программы.
 //
 // Из них собираются assets/icon.ico, assets/archive.ico (tools/genicon) и
 // картинки пакета меню Windows 11.
@@ -61,7 +61,7 @@ func render(size int, sample func(x, y float64) rgba) *image.NRGBA {
 func Render(size int) *image.NRGBA { return render(size, appSample) }
 
 // RenderArchive - значок файлов-архивов.
-func RenderArchive(size int) *image.NRGBA { return render(size, archiveSample) }
+func RenderArchive(size int) *image.NRGBA { return render(size, folderSample) }
 
 func appSample(x, y float64) rgba {
 	if !inRoundRect(x, y, 0.04, 0.04, 0.96, 0.96, 0.22) {
@@ -88,48 +88,34 @@ func appSample(x, y float64) rgba {
 	return white
 }
 
-func archiveSample(x, y float64) rgba {
-	const l, t, r, b, fold = 0.17, 0.05, 0.83, 0.95, 0.2
-	line := hex(0xC6C6C6)
-	paper := hex(0xFFFFFF)
-	// лист с загнутым правым верхним углом
-	inPage := inRoundRect(x, y, l, t, r, b, 0.035) && (x-(r-fold))+(t+fold-y) <= fold+1e-9
-	if !inPage {
-		return clear
-	}
-	border := 0.022
-	inner := inRoundRect(x, y, l+border, t+border, r-border, b-border, 0.02) &&
-		(x-(r-fold))+(t+fold-y) <= fold-border*1.4
-	// загиб
-	if x > r-fold && y < t+fold && (x-(r-fold))+(t+fold-y) >= fold-border*1.4 {
-		if (x-(r-fold))+(t+fold-y) <= fold-border*0.3 {
-			return line
+// folderSample - значок архива: оранжевая папка (задняя стенка с ушком,
+// выглядывающий лист, передняя стенка) и молния с бегунком на передней стенке.
+func folderSample(x, y float64) rgba {
+	front := inRoundRect(x, y, 0.06, 0.34, 0.94, 0.88, 0.07)
+	if front {
+		bg := orange((y - 0.34) / 0.54)
+		// молния: белые зубцы через один слева и справа от оси, бегунок
+		if y > 0.34 && y < 0.62 {
+			row := int((y - 0.34) / 0.05)
+			dx := x - 0.5
+			if math.Mod(y-0.34, 0.05) < 0.03 && (row%2 == 0 && dx > -0.058 && dx < 0.004 || row%2 == 1 && dx < 0.058 && dx > -0.004) {
+				return white
+			}
 		}
-		if x-(r-fold) <= y-t {
-			return hex(0xE4E4E4)
+		if inRoundRect(x, y, 0.435, 0.6, 0.565, 0.79, 0.035) && !inRoundRect(x, y, 0.474, 0.7, 0.526, 0.755, 0.014) {
+			return white
 		}
-		return clear
+		return bg
 	}
-	if !inner {
-		return line
+	if inRoundRect(x, y, 0.13, 0.24, 0.87, 0.5, 0.03) {
+		return hex(0xFFF4EC) // лист внутри папки
 	}
-	c := paper
-	// молния: зубцы через один слева и справа от оси
-	if y > 0.08 && y < 0.6 {
-		row := int((y - 0.08) / 0.055)
-		dx := x - 0.5
-		if math.Mod(y-0.08, 0.055) < 0.033 && (row%2 == 0 && dx > -0.065 && dx < 0.005 || row%2 == 1 && dx < 0.065 && dx > -0.005) {
-			c = hex(0x5B5B5B)
-		}
+	back := inRoundRect(x, y, 0.06, 0.19, 0.94, 0.8, 0.07) || inRoundRect(x, y, 0.06, 0.12, 0.44, 0.3, 0.06)
+	if back {
+		t := (y - 0.12) / 0.6
+		return rgba{lerp(0xD9, 0xB4, t) / 255, lerp(0x5A, 0x3A, t) / 255, lerp(0x14, 0x08, t) / 255, 1} // темнее передней стенки
 	}
-	// оранжевый бегунок
-	if inRoundRect(x, y, 0.41, 0.56, 0.59, 0.82, 0.05) {
-		c = orange((y - 0.56) / 0.26)
-		if inRoundRect(x, y, 0.465, 0.69, 0.535, 0.76, 0.02) {
-			c = paper
-		}
-	}
-	return c
+	return clear
 }
 
 func lerp(a, b, t float64) float64 { return a + (b-a)*math.Max(0, math.Min(1, t)) }
