@@ -134,12 +134,17 @@ func (mw *mainWindow) settings() {
 	}
 	cfg.OpenAfter, cfg.CheckUpdates = openAfter, checkUpd
 	if menu != cfg.ContextMenu || assoc != cfg.Associations {
+		menuTurnedOn := menu && !cfg.ContextMenu
 		cfg.ContextMenu, cfg.Associations, cfg.Asked = menu, assoc, true
 		err := runTask(mw, "Настраиваю проводник", 300*time.Millisecond, func(context.Context, *Job, *Task) error {
 			return applyIntegration(cfg, menu, assoc)
 		})
 		if err != nil {
 			showError(mw, "Не все удалось настроить.", err)
+		}
+		_ = cfg.Save()
+		if menuTurnedOn && win11Menu() && cfg.menuPkg() != "" {
+			offerExplorerRestart(mw)
 		}
 	}
 	_ = cfg.Save()

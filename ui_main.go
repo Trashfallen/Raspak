@@ -499,6 +499,10 @@ func (mw *mainWindow) firstRun() {
 		if err != nil {
 			showError(mw, "Не все удалось встроить.", err)
 		}
+		_ = mw.cfg.Save()
+		if win11Menu() && mw.cfg.menuPkg() != "" {
+			offerExplorerRestart(mw)
+		}
 	}
 	_ = mw.cfg.Save()
 }

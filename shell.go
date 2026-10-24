@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/lxn/walk"
@@ -183,6 +184,49 @@ func setAssociations(exe string, on bool) error {
 	}
 	notifyAssocChanged()
 	return nil
+}
+
+// restartExplorer перезапускает проводник: список пунктов нового меню
+// Windows 11 он читает при старте и только что установленный пакет не видит.
+func restartExplorer() {
+	kill := exec.Command("taskkill.exe", "/f", "/im", "explorer.exe")
+	kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	_ = kill.Run()
+	// обычно Windows сама поднимает оболочку; если нет - запускаем
+	for range 20 {
+		time.Sleep(250 * time.Millisecond)
+		if processRunning("explorer.exe") {
+			return
+		}
+	}
+	if cmd := exec.Command("explorer.exe"); cmd.Start() == nil {
+		go cmd.Wait()
+	}
+}
+
+func processRunning(name string) bool {
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(snap)
+	var pe windows.ProcessEntry32
+	pe.Size = uint32(unsafe.Sizeof(pe))
+	for err = windows.Process32First(snap, &pe); err == nil; err = windows.Process32Next(snap, &pe) {
+		if strings.EqualFold(windows.UTF16ToString(pe.ExeFile[:]), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// offerExplorerRestart: после установки меню Windows 11 предложить перезапуск проводника.
+func offerExplorerRestart(owner walk.Form) {
+	msg := "Пункт Raspak появится в меню Windows 11 после перезапуска проводника.\n\n" +
+		"Перезапустить сейчас? Открытые окна папок закроются, панель задач на секунду пропадет."
+	if walk.MsgBox(owner, appName, msg, walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) == win.IDYES {
+		restartExplorer()
+	}
 }
 
 func openDefaultApps() { shellOpen("ms-settings:defaultapps?registeredAppUser=" + appName) }
