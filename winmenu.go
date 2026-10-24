@@ -172,8 +172,11 @@ func buildMenuPackage(path, exeName, publisher string) error {
 	return os.WriteFile(path, out.Bytes(), 0o644)
 }
 
-// powershell выполняет скрипт без окна и возвращает вывод.
+// powershell выполняет скрипт без окна и возвращает вывод. Вывод в UTF-8
+// (иначе русские ошибки приходят в cp866), при ошибке - только ее текст.
 func powershell(script string) (string, error) {
+	script = "[Console]::OutputEncoding=[Text.Encoding]::UTF8;$ErrorActionPreference='Stop';" +
+		"try{" + script + "}catch{[Console]::Out.Write($_.Exception.Message);exit 1}"
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
 	out, err := cmd.CombinedOutput()
@@ -257,11 +260,15 @@ func trustCertMachine(cer string) error {
 	return nil
 }
 
+// unregisterMenuPackage снимает пакет и сертификат пользователя. Копию в
+// хранилище компьютера (если ставили через UAC) без прав администратора не
+// удалить, и Cert:\CurrentUser ее тоже показывает - ошибки удаления не считаем:
+// без закрытого ключа сертификат ничего не подпишет. Подписанный пакет
+// остается в папке данных: повторное включение обойдется без нового
+// сертификата и без UAC.
 func unregisterMenuPackage() error {
 	_, err := powershell("Get-AppxPackage -Name " + menuPkgName + " | Remove-AppxPackage;" +
-		`Get-ChildItem Cert:\CurrentUser\TrustedPeople | Where-Object { $_.Subject -eq ` + psQuote(menuPkgPublisher) + " } | Remove-Item")
-	for _, f := range []string{"Raspak-menu.msix", "Raspak-menu.cer", "Raspak-menu.txt"} {
-		os.Remove(filepath.Join(dataDir(), f))
-	}
+		`Get-ChildItem Cert:\CurrentUser\TrustedPeople | Where-Object { $_.Subject -eq ` + psQuote(menuPkgPublisher) +
+		" } | Remove-Item -ErrorAction SilentlyContinue")
 	return err
 }
