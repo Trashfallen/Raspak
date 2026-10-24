@@ -39,7 +39,7 @@ const (
 	menuPkgName      = "Raspak"
 	menuPkgPublisher = "CN=Raspak Local"
 	// menuPkgVersion поднимать при любом изменении манифеста или пунктов меню
-	menuPkgVersion = "1.0.0.0"
+	menuPkgVersion = "1.1.0.0"
 )
 
 // win11Menu: в этой Windows есть новое контекстное меню.
@@ -49,9 +49,11 @@ func win11Menu() bool {
 
 func menuManifest(exeName, publisher string) string {
 	clsid := strings.Trim(menuCLSID.String(), "{}")
+	// все файлы и папки: какие пункты показать, решает обработчик (GetState),
+	// так новые пункты меню не требуют нового пакета
 	var types strings.Builder
-	for _, ext := range archiveExts {
-		fmt.Fprintf(&types, "            <desktop5:ItemType Type=%q><desktop5:Verb Id=\"Raspak\" Clsid=%q/></desktop5:ItemType>\n", ext, clsid)
+	for _, t := range []string{"*", "Directory"} {
+		fmt.Fprintf(&types, "            <desktop5:ItemType Type=%q><desktop5:Verb Id=\"Raspak\" Clsid=%q/></desktop5:ItemType>\n", t, clsid)
 	}
 	return `<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -192,8 +194,14 @@ func powershell(script string) (string, error) {
 
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
+// errNeedResign: пакет меню надо собрать и подписать заново (поменялось меню
+// или имя exe) - это новый сертификат и, скорее всего, запрос UAC. Без
+// спроса пользователя этого не делаем.
+var errNeedResign = errors.New("меню Windows 11 нужно обновить")
+
 // registerMenuPackage ставит (или переставляет) пакет меню для папки с exe.
-func registerMenuPackage(exe string) error {
+// allowResign=false - только переставить уже подписанный пакет.
+func registerMenuPackage(exe string, allowResign bool) error {
 	dir := dataDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -203,6 +211,9 @@ func registerMenuPackage(exe string) error {
 	stampFile := filepath.Join(dir, "Raspak-menu.txt")
 	stamp := filepath.Base(exe) + "|" + menuPkgVersion
 	if b, _ := os.ReadFile(stampFile); string(b) != stamp || !fileExists(pkg) || !fileExists(cer) {
+		if !allowResign {
+			return errNeedResign
+		}
 		if err := makeSignedPackage(pkg, cer, filepath.Base(exe)); err != nil {
 			return err
 		}

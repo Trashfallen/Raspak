@@ -156,6 +156,10 @@ func (mw *mainWindow) openDialog() {
 }
 
 func (mw *mainWindow) onDrop(files []string) {
+	if !allArchives(files) {
+		mw.pack(files) // принесли обычные файлы или папки - запаковать
+		return
+	}
 	files = uniqueVolumes(files) // все тома одного архива - это один архив
 	if len(files) == 1 {
 		mw.open(files[0])
@@ -311,6 +315,34 @@ func (mw *mainWindow) activate() {
 	}
 	if err := shellOpen(target); err != nil {
 		showError(mw, "Не удалось открыть «"+n.name+"».", err)
+	}
+}
+
+// allArchives: все пути - файлы архивов (не папки).
+func allArchives(paths []string) bool {
+	for _, p := range paths {
+		if fi, err := os.Stat(p); err != nil || fi.IsDir() || !isArchiveName(p) {
+			return false
+		}
+	}
+	return len(paths) > 0
+}
+
+// pack: окно «Добавить в архив», затем упаковка.
+func (mw *mainWindow) pack(sources []string) {
+	opt, ok := packDialog(mw, sources, mw.cfg)
+	if !ok {
+		return
+	}
+	if err := runPack(mw, sources, opt); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			showError(mw, "Не удалось создать «"+filepath.Base(opt.Out)+"».", err)
+		}
+		return
+	}
+	mw.info.SetText("Создан " + filepath.Base(opt.Out))
+	if mw.cfg.OpenAfter {
+		showInExplorer(opt.Out, true)
 	}
 }
 
@@ -483,7 +515,7 @@ func (mw *mainWindow) restorePlacement() {
 // firstRun: один раз спрашиваем про встраивание в проводник.
 func (mw *mainWindow) firstRun() {
 	if mw.cfg.Asked || appVersion == "dev" {
-		syncIntegration(mw.cfg)
+		syncIntegration(mw.cfg, func() { mw.Synchronize(mw.askMenuUpdate) })
 		return
 	}
 	mw.cfg.Asked = true
@@ -505,6 +537,27 @@ func (mw *mainWindow) firstRun() {
 		}
 	}
 	_ = mw.cfg.Save()
+}
+
+// askMenuUpdate: в новой версии поменялось меню Windows 11 - пакет надо
+// переподписать, а это запрос администратора. Спрашиваем один раз за запуск.
+func (mw *mainWindow) askMenuUpdate() {
+	msg := "В Raspak обновилось меню проводника: появились пункты для упаковки файлов и папок в архив.\n\n" +
+		"Обновить меню Windows 11 сейчас? Windows один раз спросит разрешение администратора."
+	if walk.MsgBox(mw, appName, msg, walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != win.IDYES {
+		return
+	}
+	exe := exePath()
+	err := runTask(mw, "Обновляю меню проводника", 300*time.Millisecond, func(context.Context, *Job, *Task) error {
+		return registerMenuPackage(exe, true)
+	})
+	if err != nil {
+		showError(mw, "Меню Windows 11 не обновилось.", err)
+		return
+	}
+	mw.cfg.setMenuPkg(menuPkgStamp(exe))
+	_ = mw.cfg.Save()
+	offerExplorerRestart(mw)
 }
 
 // ---------- обновление ----------

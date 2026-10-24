@@ -90,15 +90,66 @@ func notifyAssocChanged() {
 	procSHChangeNotify.Call(shcneAssocChanged, 0, 0, 0)
 }
 
-// setContextMenu: подменю «Raspak» в контекстном меню архивов.
-// В Windows 11 оно в «Показать дополнительные параметры» (Shift+F10).
+// writeCascade пишет подменю «Raspak» с пунктами {ключ, название, команда}.
+// appliesTo (AQS) ограничивает, для каких файлов оно видно.
+func writeCascade(key, exe, appliesTo string, items [][3]string) error {
+	q := `"` + exe + `"`
+	vals := [][2]string{{"MUIVerb", appName}, {"Icon", q + ",0"}, {"SubCommands", ""}}
+	if appliesTo != "" {
+		vals = append(vals, [2]string{"AppliesTo", appliesTo})
+	}
+	for _, v := range vals {
+		if err := regSet(key, v[0], v[1]); err != nil {
+			return err
+		}
+	}
+	for _, it := range items {
+		// Player: без лимита в 15 выделенных файлов; копии программы соберут их в одно задание
+		for _, v := range [][3]string{{key + `\shell\` + it[0], "MUIVerb", it[1]}, {key + `\shell\` + it[0], "MultiSelectModel", "Player"},
+			{key + `\shell\` + it[0] + `\command`, "", it[2]}} {
+			if err := regSet(v[0], v[1], v[2]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// setContextMenu: подменю «Raspak» в классическом контекстном меню: на архивах -
+// распаковка, на остальных файлах и папках - упаковка. В Windows 11 оно в
+// «Показать дополнительные параметры» (Shift+F10), там же новое меню свое.
 func setContextMenu(exe string, on bool) error {
 	q := `"` + exe + `"`
+	addDialog := [3]string{"5adddialog", "Добавить в архив…", q + ` --add-dialog "%1"`}
 	items := [][3]string{
 		{"1open", "Открыть", q + ` "%1"`},
 		{"2extract", "Распаковать здесь", q + ` --extract "%1"`},
 		{"3extractto", "Распаковать в…", q + ` --extract-to "%1"`},
 		{"4test", "Проверить архив", q + ` --test "%1"`},
+		addDialog,
+	}
+	packItems := [][3]string{
+		{"1add", "Добавить в ZIP-архив", q + ` --add "%1"`},
+		{"2adddialog", "Добавить в архив…", q + ` --add-dialog "%1"`},
+	}
+	// у архивов свое подменю - упаковочное на них не показываем
+	var notArchive []string
+	for _, ext := range archiveExts {
+		notArchive = append(notArchive, "System.FileExtension:="+ext)
+	}
+	appliesTo := "NOT (" + strings.Join(notArchive, " OR ") + ")"
+	for _, k := range []string{classesKey + `\*\shell\` + appName, classesKey + `\Directory\shell\` + appName} {
+		regDeleteTree(k)
+		if !on {
+			continue
+		}
+		at := appliesTo
+		if strings.Contains(k, `\Directory\`) {
+			at = ""
+		}
+		if err := writeCascade(k, exe, at, packItems); err != nil {
+			return err
+		}
 	}
 	for _, ext := range archiveExts {
 		key := classesKey + `\SystemFileAssociations\` + ext + `\shell\` + appName
@@ -122,18 +173,8 @@ func setContextMenu(exe string, on bool) error {
 				return err
 			}
 		}
-		for _, v := range [][2]string{{"MUIVerb", appName}, {"Icon", q + ",0"}, {"SubCommands", ""}} {
-			if err := regSet(key, v[0], v[1]); err != nil {
-				return err
-			}
-		}
-		for _, it := range items {
-			if err := regSet(key+`\shell\`+it[0], "MUIVerb", it[1]); err != nil {
-				return err
-			}
-			if err := regSet(key+`\shell\`+it[0]+`\command`, "", it[2]); err != nil {
-				return err
-			}
+		if err := writeCascade(key, exe, "", items); err != nil {
+			return err
 		}
 	}
 	notifyAssocChanged()
@@ -348,6 +389,11 @@ func pickFolder(ownerForm walk.Form, title, initial string) (string, error) {
 	if ownerForm != nil {
 		owner = uintptr(ownerForm.Handle())
 	}
+	return pickFolderHwnd(owner, title, initial)
+}
+
+// pickFolderHwnd - то же для окна, которое не из walk (WebView2).
+func pickFolderHwnd(owner uintptr, title, initial string) (string, error) {
 	if hr, _, _ := procCoInitializeEx.Call(0, coinitApartment|coinitDisableOle1); int32(hr) >= 0 {
 		defer procCoUninitialize.Call()
 	}

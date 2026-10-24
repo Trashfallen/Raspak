@@ -22,6 +22,9 @@ type Config struct {
 	} `json:"window"`
 	MenuPkg string `json:"menu_package"` // версия и путь exe, с которыми зарегистрировано меню Windows 11
 
+	PackFormat string `json:"pack_format"` // последний выбранный формат нового архива (".zip"...)
+	PackLevel  int    `json:"pack_level"`
+
 	mu sync.Mutex
 }
 

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #f3f3f3; --card: #ffffff; --text: #1b1b1b; --muted: #616161;
+    --line: #e1e1e1; --field: #ffffff; --field-line: #d0d0d0; --seg: #e9e9e9;
+    --accent: #e8590c; --accent-hover: #d24f08; --warn: #b54708;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #202020; --card: #2c2c2c; --text: #f3f3f3; --muted: #a6a6a6;
+      --line: #3a3a3a; --field: #1c1c1c; --field-line: #474747; --seg: #303030;
+      --accent: #f2711c; --accent-hover: #fb8a3c; --warn: #f5a524;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+  body { font: 14px "Segoe UI Variable Text", "Segoe UI", sans-serif; user-select: none; cursor: default; }
+  .wrap { height: 100%; padding: 20px 22px 18px; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  header img { width: 36px; height: 36px; flex: none; }
+  h1 { margin: 0; font: 600 18px "Segoe UI Variable Display", "Segoe UI", sans-serif; }
+  .sub { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .head-text { min-width: 0; }
+  .label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  input {
+    width: 100%; font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid var(--field-line); border-bottom-width: 2px; border-radius: 6px; padding: 7px 10px; outline: none;
+  }
+  input:focus { border-bottom-color: var(--accent); }
+  input:disabled { opacity: .45; }
+  .where { margin-top: 6px; font-size: 12px; color: var(--muted); display: flex; gap: 8px; min-width: 0; }
+  .where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+  a { color: var(--accent); cursor: pointer; flex: none; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .row { display: grid; grid-template-columns: 1fr 1.12fr; gap: 14px; }
+  .seg { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--seg); }
+  .seg button {
+    flex: 1; border: 0; padding: 6px 0; border-radius: 6px; background: transparent;
+    color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .seg button:hover:not(.on) { background: color-mix(in srgb, var(--card) 45%, transparent); }
+  .seg button.on { background: var(--card); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+  .pw { position: relative; }
+  .pw input { padding-right: 40px; }
+  .eye {
+    position: absolute; right: 4px; top: 4px; bottom: 6px; width: 32px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 15px;
+  }
+  .eye:hover { background: var(--seg); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; }
+  .hint.warn { color: var(--warn); }
+  footer { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; }
+  .btn {
+    min-width: 96px; padding: 7px 16px; border-radius: 6px; font: inherit; cursor: pointer;
+    border: 1px solid var(--field-line); background: var(--card); color: var(--text);
+  }
+  .btn:hover { filter: brightness(.97); }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: var(--accent-hover); filter: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img id="icon" alt="">
+    <div class="head-text">
+      <h1>Добавить в архив</h1>
+      <div class="sub" id="what"></div>
+    </div>
+  </header>
+
+  <div>
+    <span class="label">Имя архива</span>
+    <input id="name" spellcheck="false">
+    <div class="where"><span id="dir"></span><a id="change">Изменить</a></div>
+  </div>
+
+  <div class="row">
+    <div>
+      <span class="label">Формат</span>
+      <div class="seg" id="format"></div>
+    </div>
+    <div>
+      <span class="label">Сжатие</span>
+      <div class="seg" id="level"></div>
+    </div>
+  </div>
+
+  <div>
+    <span class="label">Пароль</span>
+    <div class="pw">
+      <input id="pw" type="password" placeholder="Без пароля" spellcheck="false">
+      <button class="eye" id="eye" title="Показать пароль" tabindex="-1">👁</button>
+    </div>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <footer>
+    <button class="btn" id="cancel">Отмена</button>
+    <button class="btn primary" id="ok">Создать</button>
+  </footer>
+</div>
+<script>
+  const S = window.INIT;
+  const $ = (id) => document.getElementById(id);
+  let format = S.format, level = S.level, dir = S.dir, confirmReplace = false;
+
+  $("icon").src = S.icon;
+  $("what").textContent = S.what;
+  $("dir").textContent = dir;
+  $("name").value = S.name;
+
+  function seg(el, items, cur, onPick) {
+    el.innerHTML = "";
+    for (const [value, text] of items) {
+      const b = document.createElement("button");
+      b.textContent = text;
+      b.className = value === cur ? "on" : "";
+      b.onclick = () => { onPick(value); seg(el, items, value, onPick); };
+      el.appendChild(b);
+    }
+  }
+  const exts = S.formats.map((f) => f[0]);
+  function stripExt(n) {
+    for (const e of exts) if (n.toLowerCase().endsWith(e)) return n.slice(0, -e.length);
+    return n;
+  }
+  function refresh() {
+    const zip = format === ".zip";
+    $("pw").disabled = !zip;
+    $("eye").disabled = !zip;
+    const h = $("hint");
+    h.className = "hint";
+    h.textContent = zip ? ($("pw").value ? "Файлы будут зашифрованы AES-256" : "") : "Пароль есть только у ZIP";
+    confirmReplace = false;
+    $("ok").textContent = "Создать";
+  }
+  seg($("format"), S.formats, format, (v) => {
+    format = v;
+    $("name").value = stripExt($("name").value) + v;
+    refresh();
+  });
+  seg($("level"), S.levels, level, (v) => { level = v; });
+
+  $("pw").oninput = refresh;
+  $("name").oninput = refresh;
+  $("eye").onclick = () => { const p = $("pw"); p.type = p.type === "password" ? "text" : "password"; p.focus(); };
+  $("change").onclick = () => raspakPickFolder(dir);
+  window.onFolder = (p) => { if (p) { dir = p; $("dir").textContent = p; refresh(); } };
+
+  async function create() {
+    let name = $("name").value.trim();
+    if (!name) { $("name").focus(); return; }
+    if (!exts.some((e) => name.toLowerCase().endsWith(e))) name += format;
+    $("name").value = name;
+    if (!confirmReplace && await raspakExists(dir, name)) {
+      const h = $("hint");
+      h.className = "hint warn";
+      h.textContent = "Такой архив уже есть. Нажмите «Заменить», чтобы перезаписать.";
+      $("ok").textContent = "Заменить";
+      confirmReplace = true;
+      return;
+    }
+    raspakSubmit({ dir, name, format, level, password: format === ".zip" ? $("pw").value : "" });
+  }
+  $("ok").onclick = create;
+  $("cancel").onclick = () => raspakCancel();
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); create(); }
+    if (e.key === "Escape") raspakCancel();
+  });
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+  refresh();
+  const n = $("name");
+  n.focus();
+  n.setSelectionRange(0, stripExt(n.value).length);
+</script>
+</body>
+</html>

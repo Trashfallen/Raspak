@@ -6,6 +6,9 @@ package main
 //	Raspak.exe --extract архив...       распаковать рядом (меню проводника)
 //	Raspak.exe --extract-to архив...    спросить папку и распаковать туда
 //	Raspak.exe --test архив...          проверить целостность
+//	Raspak.exe --add файл/папка...      запаковать в zip рядом
+//	Raspak.exe --add-dialog файл...     окно «Добавить в архив»
+//	Raspak.exe --add @список.txt        пути списком (по одному в строке)
 //	Raspak.exe --com-server             обработчик меню Windows 11 (запускает проводник)
 
 import (
@@ -39,7 +42,7 @@ func main() {
 		case "--com-server", "-embedding", "/embedding":
 			runComServer()
 			return
-		case "--extract", "--extract-to", "--test":
+		case "--extract", "--extract-to", "--test", "--add", "--add-dialog":
 			mode = strings.ToLower(a[2:])
 		case "--after-update":
 			if i+1 < len(args) {
@@ -47,6 +50,10 @@ func main() {
 				i++
 			}
 		default:
+			if list, ok := strings.CutPrefix(a, "@"); ok && fileExists(list) {
+				files = append(files, readList(list)...) // меню Windows 11 передает много файлов списком
+				continue
+			}
 			files = append(files, a)
 		}
 	}
@@ -62,6 +69,22 @@ func main() {
 		return
 	}
 	runMain(loadConfig(), files)
+}
+
+// readList читает список путей (по одному в строке) и удаляет файл списка.
+func readList(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	os.Remove(path)
+	var out []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // tempRoot - папка для файлов, открытых из архива.

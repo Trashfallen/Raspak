@@ -10,10 +10,12 @@ package main
 // через windows.NewCallback, память объектов - CoTaskMemAlloc.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,15 +47,45 @@ const (
 	ecsEnabled        = 0x0
 )
 
-// Пункты подменю.
+// Когда пункт виден.
+const (
+	forArchives = iota // выделены только архивы
+	forFiles           // выделено что-то кроме архивов
+	forAll
+)
+
+// Пункты подменю. Пакет регистрирует меню для всех файлов и папок, а какие
+// пункты показать, решает GetState по выделенному.
 var menuItems = []struct {
 	title string
 	flag  string // аргумент Raspak.exe; пусто - открыть в окне
+	show  int
 }{
-	{"Распаковать здесь", "--extract"},
-	{"Распаковать в…", "--extract-to"},
-	{"Открыть в Raspak", ""},
-	{"Проверить архив", "--test"},
+	{"Распаковать здесь", "--extract", forArchives},
+	{"Распаковать в…", "--extract-to", forArchives},
+	{"Открыть в Raspak", "", forArchives},
+	{"Проверить архив", "--test", forArchives},
+	{"Добавить в ZIP", "--add", forFiles}, // с выделением - «Добавить в «Фото.zip»»
+	{"Добавить в архив…", "--add-dialog", forAll},
+}
+
+const ecsHidden = 0x2
+
+func menuTitle(idx int, paths []string) string {
+	if menuItems[idx].flag == "--add" && len(paths) > 0 {
+		return "Добавить в «" + filepath.Base(packName(paths, ".zip")) + "»"
+	}
+	return menuItems[idx].title
+}
+
+func menuVisible(idx int, paths []string) bool {
+	switch menuItems[idx].show {
+	case forArchives:
+		return allArchives(paths)
+	case forFiles:
+		return len(paths) > 0 && !allArchives(paths)
+	}
+	return true
 }
 
 const (
@@ -179,7 +211,11 @@ func initVtables() {
 		touch()
 		title := appName
 		if o.idx >= 0 {
-			title = menuItems[o.idx].title
+			var paths []string
+			if items != nil {
+				paths = shellItemPaths(items)
+			}
+			title = menuTitle(int(o.idx), paths)
 		}
 		*out = comString(title)
 		return sOK
@@ -205,6 +241,9 @@ func initVtables() {
 	getState := windows.NewCallback(func(o *comObj, items unsafe.Pointer, okToBeSlow int32, state *uint32) uintptr {
 		touch()
 		*state = ecsEnabled
+		if o.idx >= 0 && items != nil && !menuVisible(int(o.idx), shellItemPaths(items)) {
+			*state = ecsHidden
+		}
 		return sOK
 	})
 	invoke := windows.NewCallback(func(o *comObj, items unsafe.Pointer, bindCtx unsafe.Pointer) uintptr {
@@ -303,7 +342,10 @@ func shellItemPaths(arr unsafe.Pointer) []string {
 
 // runMenuItem запускает обычный Raspak.exe с нужным режимом.
 func runMenuItem(idx int, files []string) {
-	files = uniqueVolumes(files)
+	flag := menuItems[idx].flag
+	if !isPackMode(strings.TrimPrefix(flag, "--")) {
+		files = uniqueVolumes(files)
+	}
 	if len(files) == 0 {
 		return
 	}
@@ -316,12 +358,19 @@ func runMenuItem(idx int, files []string) {
 			go cmd.Wait()
 		}
 	}
-	flag := menuItems[idx].flag
 	if flag == "" {
 		for _, f := range files { // каждый архив - в своем окне
 			start(f)
 		}
 		return
+	}
+	// тысяча выделенных файлов в командную строку не влезет - передаем списком
+	if len(strings.Join(files, " ")) > 8000 {
+		list := filepath.Join(tempRoot(), fmt.Sprintf("list-%d.txt", time.Now().UnixNano()))
+		if os.MkdirAll(tempRoot(), 0o755) == nil && os.WriteFile(list, []byte(strings.Join(files, "\n")), 0o644) == nil {
+			start(flag, "@"+list)
+			return
+		}
 	}
 	start(append([]string{flag}, files...)...)
 }

@@ -21,7 +21,7 @@ func applyIntegration(cfg *Config, menu, assoc bool) error {
 	}
 	if win11Menu() {
 		if menu {
-			if err := registerMenuPackage(exe); err != nil {
+			if err := registerMenuPackage(exe, true); err != nil {
 				errs = append(errs, err)
 			} else {
 				cfg.setMenuPkg(menuPkgStamp(exe))
@@ -43,8 +43,9 @@ func applyIntegration(cfg *Config, menu, assoc bool) error {
 func menuPkgStamp(exe string) string { return menuPkgVersion + "|" + exe }
 
 // syncIntegration при запуске обновляет пути к exe в реестре и пакет меню
-// (программу могли перенести или обновить). Тихо, в фоне.
-func syncIntegration(cfg *Config) {
+// (программу могли перенести или обновить). Тихо, в фоне; если пакет надо
+// переподписать (новые пункты меню), вызывает needResign - спросить человека.
+func syncIntegration(cfg *Config, needResign func()) {
 	if !cfg.ContextMenu && !cfg.Associations {
 		return
 	}
@@ -53,8 +54,11 @@ func syncIntegration(cfg *Config) {
 		if cfg.ContextMenu {
 			_ = setContextMenu(exe, true)
 			if win11Menu() && cfg.menuPkg() != menuPkgStamp(exe) {
-				if registerMenuPackage(exe) == nil {
+				switch err := registerMenuPackage(exe, false); {
+				case err == nil:
 					cfg.setMenuPkg(menuPkgStamp(exe))
+				case errors.Is(err, errNeedResign) && needResign != nil:
+					needResign()
 				}
 			}
 		}

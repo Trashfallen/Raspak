@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,8 +71,8 @@ func pushQueue(items []batchItem) error {
 	})
 }
 
-// takeQueue забирает все задания; если их нет - отпускает ведущий замок.
-func takeQueue(leader *windows.Handle) []batchItem {
+// takeQueue забирает все задания; если их нет и release - отпускает ведущий замок.
+func takeQueue(leader *windows.Handle, release bool) []batchItem {
 	var items []batchItem
 	err := withQueue(func(q string) error {
 		f, err := os.Open(q)
@@ -86,7 +87,7 @@ func takeQueue(leader *windows.Handle) []batchItem {
 			f.Close()
 			os.Remove(q)
 		}
-		if len(items) == 0 {
+		if len(items) == 0 && release {
 			windows.CloseHandle(*leader)
 			*leader = 0
 		}
@@ -101,7 +102,10 @@ func takeQueue(leader *windows.Handle) []batchItem {
 
 func runBatch(mode string, files []string) {
 	var items []batchItem
-	for _, f := range uniqueVolumes(files) { // выделили все тома - распаковать набор один раз
+	if !isPackMode(mode) {
+		files = uniqueVolumes(files) // выделили все тома - распаковать набор один раз
+	}
+	for _, f := range files {
 		if abs, err := filepath.Abs(f); err == nil {
 			f = abs
 		}
@@ -118,14 +122,26 @@ func runBatch(mode string, files []string) {
 	}
 	b := &batchState{}
 	for leader != 0 {
-		items := takeQueue(&leader)
+		items := takeQueue(&leader, true)
 		if len(items) == 0 {
 			break
+		}
+		if slices.ContainsFunc(items, func(it batchItem) bool { return isPackMode(it.mode) }) {
+			// «Добавить в архив» на 10 файлах - 10 копий программы: ждем, пока
+			// все положат свое, чтобы получился один архив
+			for {
+				time.Sleep(400 * time.Millisecond)
+				more := takeQueue(&leader, false)
+				if len(more) == 0 {
+					break
+				}
+				items = append(items, more...)
+			}
 		}
 		b.run(items)
 		if b.cancelled {
 			// отмена - остальное из очереди тоже не делаем
-			for leader != 0 && len(takeQueue(&leader)) > 0 {
+			for leader != 0 && len(takeQueue(&leader, true)) > 0 {
 			}
 		}
 	}
@@ -156,12 +172,44 @@ func (b *batchState) run(items []batchItem) {
 	}
 	var fresh []batchItem
 	for _, it := range items {
-		if k := it.mode + "|" + volumeKey(it.path); !b.seen[k] {
+		k := it.mode + "|" + strings.ToLower(it.path)
+		if !isPackMode(it.mode) {
+			k = it.mode + "|" + volumeKey(it.path)
+		}
+		if !b.seen[k] {
 			b.seen[k] = true
 			fresh = append(fresh, it)
 		}
 	}
 	items = fresh
+	// упаковка: все выделенное в одной папке - один архив
+	var packs [][]batchItem
+	group := map[string]int{}
+	var rest []batchItem
+	for _, it := range items {
+		if !isPackMode(it.mode) {
+			rest = append(rest, it)
+			continue
+		}
+		k := it.mode + "|" + strings.ToLower(filepath.Dir(it.path))
+		if i, ok := group[k]; ok {
+			packs[i] = append(packs[i], it)
+		} else {
+			group[k] = len(packs)
+			packs = append(packs, []batchItem{it})
+		}
+	}
+	for _, g := range packs {
+		if b.cancelled {
+			return
+		}
+		paths := make([]string, len(g))
+		for i, it := range g {
+			paths[i] = it.path
+		}
+		b.pack(g[0].mode, paths)
+	}
+	items = rest
 	for i, it := range items {
 		if b.cancelled {
 			return
@@ -231,5 +279,28 @@ func (b *batchState) report() {
 		walk.MsgBox(nil, appName, "Не получилось:\n\n"+strings.Join(b.errs, "\n\n"), walk.MsgBoxIconError)
 	case len(b.tested) > 0 && !b.cancelled:
 		walk.MsgBox(nil, appName, strings.Join(b.tested, "\n"), walk.MsgBoxIconInformation)
+	}
+}
+
+func isPackMode(mode string) bool { return mode == "add" || mode == "add-dialog" }
+
+// pack: «add» - сразу zip рядом, «add-dialog» - сначала окно настроек.
+func (b *batchState) pack(mode string, paths []string) {
+	cfg := loadConfig()
+	opt := CompressOptions{Out: packName(paths, ".zip"), Format: ".zip", Level: LevelNormal}
+	if mode == "add-dialog" {
+		o, ok := packDialog(nil, paths, cfg)
+		if !ok {
+			b.cancelled = true
+			return
+		}
+		opt = o
+	}
+	if err := runPack(nil, paths, opt); err != nil {
+		if errors.Is(err, context.Canceled) {
+			b.cancelled = true
+			return
+		}
+		b.errs = append(b.errs, filepath.Base(opt.Out)+": "+userError(err))
 	}
 }
