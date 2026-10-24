@@ -71,6 +71,8 @@ func (mw *mainWindow) settings() {
 		menuCB, assocCB, openCB, upCB *walk.CheckBox
 		okBtn, cancelBtn              *walk.PushButton
 		checkBtn                      *walk.PushButton
+		menu, assoc, openAfter        bool
+		checkUpd                      bool
 	)
 	cfg := mw.cfg
 	section := func(t string) Label {
@@ -117,7 +119,12 @@ func (mw *mainWindow) settings() {
 			VSpacer{Size: 8},
 			Composite{Layout: HBox{MarginsZero: true}, Children: []Widget{
 				HSpacer{},
-				PushButton{AssignTo: &okBtn, Text: "OK", OnClicked: func() { dlg.Accept() }},
+				PushButton{AssignTo: &okBtn, Text: "OK", OnClicked: func() {
+					// читать галочки, пока окно живо: после Run оно уничтожено и все читается как «выкл»
+					menu, assoc = menuCB.Checked(), assocCB.Checked()
+					openAfter, checkUpd = openCB.Checked(), upCB.Checked()
+					dlg.Accept()
+				}},
 				PushButton{AssignTo: &cancelBtn, Text: "Отмена", OnClicked: func() { dlg.Cancel() }},
 			}},
 		},
@@ -125,8 +132,7 @@ func (mw *mainWindow) settings() {
 	if err != nil || res != walk.DlgCmdOK {
 		return
 	}
-	menu, assoc := menuCB.Checked(), assocCB.Checked()
-	cfg.OpenAfter, cfg.CheckUpdates = openCB.Checked(), upCB.Checked()
+	cfg.OpenAfter, cfg.CheckUpdates = openAfter, checkUpd
 	if menu != cfg.ContextMenu || assoc != cfg.Associations {
 		cfg.ContextMenu, cfg.Associations, cfg.Asked = menu, assoc, true
 		err := runTask(mw, "Настраиваю проводник", 300*time.Millisecond, func(context.Context, *Job, *Task) error {

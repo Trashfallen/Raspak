@@ -217,6 +217,7 @@ func askPassword(owner walk.Form, name string, wrong bool) (string, bool) {
 		edit     *walk.LineEdit
 		okBtn    *walk.PushButton
 		cancelBt *walk.PushButton
+		password string
 	)
 	text := "Архив «" + name + "» защищен паролем."
 	if wrong {
@@ -236,7 +237,10 @@ func askPassword(owner walk.Form, name string, wrong bool) (string, bool) {
 			CheckBox{Text: "Показать пароль", OnCheckedChanged: func() { edit.SetPasswordMode(!edit.PasswordMode()) }},
 			Composite{Layout: HBox{MarginsZero: true}, Children: []Widget{
 				HSpacer{},
-				PushButton{AssignTo: &okBtn, Text: "OK", OnClicked: func() { dlg.Accept() }},
+				PushButton{AssignTo: &okBtn, Text: "OK", OnClicked: func() {
+					password = edit.Text() // после Run окно уничтожено, текст уже не прочитать
+					dlg.Accept()
+				}},
 				PushButton{AssignTo: &cancelBt, Text: "Отмена", OnClicked: func() { dlg.Cancel() }},
 			}},
 		},
@@ -244,7 +248,7 @@ func askPassword(owner walk.Form, name string, wrong bool) (string, bool) {
 	if err != nil || res != walk.DlgCmdOK {
 		return "", false
 	}
-	return edit.Text(), true
+	return password, true
 }
 
 // askConflict: файл уже есть на диске.
@@ -253,9 +257,9 @@ func askConflict(owner walk.Form, target string, e Entry, old os.FileInfo) (Conf
 		dlg *walk.Dialog
 		all *walk.CheckBox
 	)
-	choice := ConflictCancel
+	choice, forAll := ConflictCancel, false
 	pick := func(c Conflict) func() {
-		return func() { choice = c; dlg.Accept() }
+		return func() { choice, forAll = c, all.Checked(); dlg.Accept() }
 	}
 	describe := func(size int64, t time.Time) string {
 		s := formatSize(size)
@@ -287,7 +291,7 @@ func askConflict(owner walk.Form, target string, e Entry, old os.FileInfo) (Conf
 	if err != nil {
 		return ConflictCancel, false
 	}
-	return choice, all.Checked()
+	return choice, forAll
 }
 
 func showError(owner walk.Form, title string, err error) {
