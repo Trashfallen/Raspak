@@ -1,9 +1,8 @@
-// Package appicon рисует значки Raspak:
-//   - программа: оранжевый квадрат, белая коробка-архив с молнией;
-//   - архив (файлы .zip, .rar, .7z...): оранжевая папка с молнией, как сжатые
-//     папки Windows - чтобы архив не путался с ярлыком программы.
+// Package appicon рисует значок Raspak - оранжевую папку с молнией, как
+// сжатые папки Windows. Он один и для программы, и для файлов-архивов
+// (.zip, .rar, .7z...).
 //
-// Из них собираются assets/icon.ico, assets/archive.ico (tools/genicon) и
+// Из него собираются assets/icon.ico, assets/archive.ico (tools/genicon) и
 // картинки пакета меню Windows 11.
 package appicon
 
@@ -57,36 +56,12 @@ func render(size int, sample func(x, y float64) rgba) *image.NRGBA {
 	return img
 }
 
-// Render - значок программы.
-func Render(size int) *image.NRGBA { return render(size, appSample) }
+// Render - значок программы: та же оранжевая папка с молнией, что у архивов,
+// чтобы ярлык программы и файлы-архивы выглядели одинаково.
+func Render(size int) *image.NRGBA { return render(size, folderSample) }
 
 // RenderArchive - значок файлов-архивов.
 func RenderArchive(size int) *image.NRGBA { return render(size, folderSample) }
-
-func appSample(x, y float64) rgba {
-	if !inRoundRect(x, y, 0.04, 0.04, 0.96, 0.96, 0.22) {
-		return clear
-	}
-	bg := orange((y - 0.04) / 0.92)
-	// крышка и короб
-	lid := inRoundRect(x, y, 0.17, 0.25, 0.83, 0.39, 0.045)
-	body := inRoundRect(x, y, 0.21, 0.41, 0.79, 0.81, 0.06)
-	if !lid && !body {
-		return bg
-	}
-	// молния: зубцы через один слева и справа от оси (как на значке архива) и бегунок
-	if y > 0.27 && y < 0.58 {
-		row := int((y - 0.27) / 0.052)
-		dx := x - 0.5
-		if math.Mod(y-0.27, 0.052) < 0.031 && (row%2 == 0 && dx > -0.06 && dx < 0.006 || row%2 == 1 && dx < 0.06 && dx > -0.006) {
-			return bg
-		}
-	}
-	if inRoundRect(x, y, 0.44, 0.57, 0.56, 0.75, 0.035) && !inRoundRect(x, y, 0.477, 0.665, 0.523, 0.715, 0.014) {
-		return bg
-	}
-	return white
-}
 
 // folderSample - значок архива: оранжевая папка (задняя стенка с ушком,
 // выглядывающий лист, передняя стенка) и молния с бегунком на передней стенке.
