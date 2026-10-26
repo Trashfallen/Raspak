@@ -408,14 +408,16 @@ func cleanName(name string) string {
 }
 
 // zipName: имена без флага UTF-8 из русской Windows записаны в cp866.
-func zipName(h *zip.FileHeader) string {
-	if h.Flags&0x800 != 0 || utf8.ValidString(h.Name) {
-		return h.Name
+func zipName(h *zip.FileHeader) string { return decodeZipName(h.Name, h.Flags) }
+
+func decodeZipName(name string, flags uint16) string {
+	if flags&0x800 != 0 || utf8.ValidString(name) {
+		return name
 	}
-	if s, err := charmap.CodePage866.NewDecoder().String(h.Name); err == nil {
+	if s, err := charmap.CodePage866.NewDecoder().String(name); err == nil {
 		return s
 	}
-	return h.Name
+	return name
 }
 
 // zipModTime: точное время из поля NTFS или Unix, иначе время DOS (оно местное).

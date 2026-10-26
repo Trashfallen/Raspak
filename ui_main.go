@@ -156,6 +156,9 @@ func (mw *mainWindow) openDialog() {
 }
 
 func (mw *mainWindow) onDrop(files []string) {
+	if mw.arc != nil && mw.dropIntoArchive(files) {
+		return
+	}
 	if !allArchives(files) {
 		mw.pack(files) // принесли обычные файлы или папки - запаковать
 		return
@@ -344,6 +347,152 @@ func (mw *mainWindow) pack(sources []string) {
 	if mw.cfg.OpenAfter {
 		showInExplorer(opt.Out, true)
 	}
+}
+
+// dropIntoArchive: архив открыт - принесенное кладем в него, в текущую папку.
+// false - не тот случай, работает обычное поведение (открыть или упаковать отдельно).
+func (mw *mainWindow) dropIntoArchive(files []string) bool {
+	where := "«" + mw.arc.Name + "»"
+	if mw.cwd != "" {
+		where += ", в папку " + strings.ReplaceAll(mw.cwd, "/", `\`)
+	}
+	what := packWhat(files)
+	if err := mw.arc.canAdd(); err != nil {
+		if allArchives(files) {
+			return false // принесли архивы - просто открыть
+		}
+		msg := "Не получится добавить в " + where + ": " + err.Error() + ".\n\nСоздать отдельный архив?"
+		return walk.MsgBox(mw, appName, msg, walk.MsgBoxYesNo|walk.MsgBoxIconInformation) != win.IDYES
+	}
+	if allArchives(files) {
+		msg := "Добавить " + what + " в " + where + "?\n\nДа - добавить внутрь, Нет - открыть."
+		switch walk.MsgBox(mw, appName, msg, walk.MsgBoxYesNoCancel|walk.MsgBoxIconQuestion) {
+		case win.IDNO:
+			return false
+		case win.IDCANCEL:
+			return true
+		}
+	} else if walk.MsgBox(mw, appName, "Добавить "+what+" в "+where+"?", walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != win.IDYES {
+		return true
+	}
+	mw.addFiles(files)
+	return true
+}
+
+// addFiles добавляет файлы и папки в открытый архив, в текущую папку.
+func (mw *mainWindow) addFiles(sources []string) {
+	a, dir := mw.arc, mw.cwd
+	var items []packItem
+	err := runTask(mw, "Собираю список файлов", 400*time.Millisecond, func(ctx context.Context, _ *Job, _ *Task) error {
+		var err error
+		items, _, err = collectFiles(ctx, sources, a.Path)
+		return err
+	})
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			showError(mw, "Не удалось прочитать добавляемое.", err)
+		}
+		return
+	}
+	intoDir(items, dir)
+	if c := addConflicts(a.Entries, items); len(c) > 0 {
+		msg := "В архиве уже есть:\n\n"
+		for i, n := range c {
+			if i == 10 {
+				msg += fmt.Sprintf("… и еще %d\n", len(c)-10)
+				break
+			}
+			msg += "• " + strings.ReplaceAll(n, "/", `\`) + "\n"
+		}
+		msg += "\nЗаменить? Нет - добавить только новое."
+		switch walk.MsgBox(mw, appName, msg, walk.MsgBoxYesNoCancel|walk.MsgBoxIconQuestion) {
+		case win.IDNO:
+			items = withoutNames(items, c)
+		case win.IDCANCEL:
+			return
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+	for {
+		err = runTask(mw, "Добавляю в «"+a.Name+"»", 300*time.Millisecond, func(ctx context.Context, job *Job, _ *Task) error {
+			return AddToArchive(ctx, a, items, job)
+		})
+		if !isPasswordErr(err) {
+			break
+		}
+		// новые файлы шифруются паролем архива - его надо знать
+		p, ok := askPassword(mw, a.Name, a.Password != "")
+		if !ok {
+			return
+		}
+		a.Password = p
+	}
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			mw.info.SetText("Добавление отменено, архив не изменен")
+		} else {
+			showError(mw, "Не удалось добавить в «"+a.Name+"».", err)
+		}
+		return
+	}
+	var added []string // что выделить: верхние элементы в текущей папке
+	for _, it := range items {
+		if parent, _ := splitPath(it.name); parent == dir {
+			added = append(added, it.name)
+		}
+	}
+	if mw.reload(added) {
+		var files int
+		for _, it := range items {
+			if !it.dir {
+				files++
+			}
+		}
+		mw.info.SetText("Добавлено: " + plural(files, "файл", "файла", "файлов"))
+	}
+}
+
+// reload перечитывает архив после изменения, остается в той же папке и
+// выделяет sel.
+func (mw *mainWindow) reload(sel []string) bool {
+	old := mw.arc
+	a, err := openWithPassword(mw, old.Path, old.Password)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			showError(mw, "Не удалось перечитать «"+old.Name+"».", err)
+		}
+		return false
+	}
+	if a.Password == "" {
+		a.Password = old.Password // zip открывается и без пароля, а он еще понадобится
+	}
+	mw.arc, mw.tree = a, buildTree(a.Entries)
+	if mw.dest.Text() == mw.suggested {
+		_, mw.suggested = smartDest(a, mw.homeDir)
+		mw.dest.SetText(mw.suggested)
+	}
+	dir := mw.cwd
+	if _, ok := mw.tree[dir]; !ok {
+		dir = ""
+	}
+	mw.showDir(dir)
+	want := map[string]bool{}
+	for _, s := range sel {
+		want[strings.ToLower(s)] = true
+	}
+	var idx []int
+	for i, n := range mw.model.rows {
+		if want[strings.ToLower(n.path)] {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) > 0 {
+		mw.tv.SetSelectedIndexes(idx)
+		mw.tv.EnsureItemVisible(idx[0])
+	}
+	return true
 }
 
 func isArchiveName(name string) bool {

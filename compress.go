@@ -426,29 +426,45 @@ func writeZipEncrypted(ctx context.Context, w io.Writer, items []packItem, opt C
 // ---------- tar.gz и tar.zst ----------
 
 func writeTar(ctx context.Context, w io.Writer, items []packItem, opt CompressOptions, job *Job) error {
-	var cw io.WriteCloser
-	switch opt.Format {
+	cw, err := tarCompressor(w, opt.Format, opt.Level)
+	if err != nil {
+		return err
+	}
+	tw := tar.NewWriter(cw)
+	if err := writeTarItems(ctx, tw, items, job); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return cw.Close()
+}
+
+// tarCompressor - сжатие для ".tar.gz" и ".tar.zst"; ".tar" - без сжатия.
+func tarCompressor(w io.Writer, format string, level int) (io.WriteCloser, error) {
+	switch format {
 	case ".tar.gz":
-		gz, err := pgzip.NewWriterLevel(w, opt.Level) // сжатие блоками на всех ядрах
-		if err != nil {
-			return err
-		}
-		cw = gz
+		return pgzip.NewWriterLevel(w, level) // сжатие блоками на всех ядрах
 	case ".tar.zst":
 		lvl := zstd.SpeedDefault
-		switch opt.Level {
+		switch level {
 		case LevelFast:
 			lvl = zstd.SpeedFastest
 		case LevelMax:
 			lvl = zstd.SpeedBestCompression
 		}
-		enc, err := zstd.NewWriter(w, zstd.WithEncoderLevel(lvl), zstd.WithEncoderConcurrency(runtime.NumCPU()))
-		if err != nil {
-			return err
-		}
-		cw = enc
+		return zstd.NewWriter(w, zstd.WithEncoderLevel(lvl), zstd.WithEncoderConcurrency(runtime.NumCPU()))
+	case ".tar":
+		return nopWriteCloser{w}, nil
 	}
-	tw := tar.NewWriter(cw)
+	return nil, errors.New("неизвестный формат " + format)
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+func writeTarItems(ctx context.Context, tw *tar.Writer, items []packItem, job *Job) error {
 	buf := make([]byte, copyBuf)
 	for _, it := range items {
 		if err := ctx.Err(); err != nil {
@@ -476,10 +492,7 @@ func writeTar(ctx context.Context, w io.Writer, items []packItem, opt CompressOp
 			return unwrapWrite(err)
 		}
 	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-	return cw.Close()
+	return nil
 }
 
 // ---------- имена ----------
