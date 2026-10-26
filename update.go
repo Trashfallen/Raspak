@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"raspak/internal/relsign"
 )
 
 const (
@@ -31,6 +33,7 @@ const (
 type release struct {
 	Tag  string
 	URL  string // exe
+	Sig  string // <exe>.sig
 	Size int64
 }
 
@@ -108,12 +111,20 @@ func checkUpdate() (*release, error) {
 	if !newerVersion(rel.Tag, appVersion) {
 		return nil, nil
 	}
+	var out *release
+	sig := ""
 	for _, a := range rel.Assets {
 		if strings.EqualFold(a.Name, updateAsset) {
-			return &release{Tag: rel.Tag, URL: a.URL, Size: a.Size}, nil
+			out = &release{Tag: rel.Tag, URL: a.URL, Size: a.Size}
+		}
+		if strings.EqualFold(a.Name, updateAsset+".sig") {
+			sig = a.URL
 		}
 	}
-	return nil, nil
+	if out != nil {
+		out.Sig = sig
+	}
+	return out, nil
 }
 
 // downloadUpdate качает новый exe рядом с текущим (.new).
@@ -160,6 +171,10 @@ func downloadUpdate(ctx context.Context, rel *release, job *Job) (string, error)
 	if got < 1<<20 || string(head) != "MZ" {
 		os.Remove(path)
 		return "", errors.New("скачанный файл не похож на программу")
+	}
+	if err := relsign.VerifyFile(ctx, rel.Sig, appName+"/"+appVersion, updateAsset, path); err != nil {
+		os.Remove(path)
+		return "", err
 	}
 	return path, nil
 }

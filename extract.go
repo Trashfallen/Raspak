@@ -94,6 +94,7 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 		res ExtractResult
 		mu  sync.Mutex // res, dirs, mode и вопросы о конфликтах
 	)
+	zone := readZone(a.Path) // архив скачан из интернета: пометка переходит на файлы
 	sel := map[string]bool{}
 	for _, s := range opt.Select {
 		sel[s] = true
@@ -208,7 +209,10 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 		if old.Mode()&0o200 == 0 { // только для чтения
 			_ = os.Chmod(target, 0o666)
 		}
-		out, err = os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
+		// пишем рядом и подменяем только после успешной записи: при отмене
+		// или ошибке старый файл остается целым
+		tmp := target + partSuffix
+		out, err = os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
 		if err != nil {
 			return nil, false, &writeError{target, err}
 		}
@@ -223,7 +227,7 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 		}
 		fail := func(err error) error {
 			out.Close()
-			os.Remove(target)
+			os.Remove(out.Name()) // новый файл или временный рядом со старым
 			return err
 		}
 		if _, err := out.Write(first); err != nil {
@@ -249,8 +253,17 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 			setFileTime(out, e.Mod) // по открытому файлу - без лишнего открытия
 		}
 		if err := out.Close(); err != nil {
-			os.Remove(target)
+			os.Remove(out.Name())
 			return &writeError{target, err}
+		}
+		if out.Name() != target {
+			if err := os.Rename(out.Name(), target); err != nil {
+				os.Remove(out.Name())
+				return &writeError{target, err}
+			}
+		}
+		if zone != nil {
+			markZone(target, zone)
 		}
 		count(int64(len(first)) + written)
 		return nil
