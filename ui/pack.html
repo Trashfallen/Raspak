@@ -52,7 +52,9 @@
   .eye:hover { background: var(--seg); }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; }
   .hint.warn { color: var(--warn); }
-  footer { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; }
+  footer { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+  .est { margin-right: auto; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .est b { color: var(--text); font-weight: 600; }
   .btn {
     min-width: 96px; padding: 7px 16px; border-radius: 6px; font: inherit; cursor: pointer;
     border: 1px solid var(--field-line); background: var(--card); color: var(--text);
@@ -99,6 +101,7 @@
   </div>
 
   <footer>
+    <span class="est" id="est" title="Оценка по выборке из файлов, точный размер будет после упаковки">Считаю размер…</span>
     <button class="btn" id="cancel">Отмена</button>
     <button class="btn primary" id="ok">Создать</button>
   </footer>
@@ -106,7 +109,7 @@
 <script>
   const S = window.INIT;
   const $ = (id) => document.getElementById(id);
-  let format = S.format, level = S.level, dir = S.dir, confirmReplace = false;
+  let format = S.format, level = S.level, dir = S.dir, confirmReplace = false, est = null;
 
   $("icon").src = S.icon;
   $("what").textContent = S.what;
@@ -128,6 +131,25 @@
     for (const e of exts) if (n.toLowerCase().endsWith(e)) return n.slice(0, -e.length);
     return n;
   }
+  // formatSize как в программе: «1,2 МБ»
+  function formatSize(n) {
+    const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+    let f = n, i = 0;
+    while (f >= 1024 && i < units.length - 1) { f /= 1024; i++; }
+    if (i === 0) return n + " Б";
+    return (f >= 100 ? f.toFixed(0) : f.toFixed(1)).replace(".", ",") + " " + units[i];
+  }
+  function showEstimate() {
+    if (!est) return;
+    const el = $("est");
+    if (!est.bytes) { el.textContent = ""; return; }
+    const size = format === ".zip" && $("pw").value ? est.zipPw : est.sizes[format][level];
+    el.innerHTML = "";
+    const b = document.createElement("b");
+    b.textContent = "≈ " + formatSize(size);
+    el.append(b, " из " + formatSize(est.bytes));
+  }
+  window.onEstimate = (e) => { est = e; showEstimate(); };
   function refresh() {
     const zip = format === ".zip";
     $("pw").disabled = !zip;
@@ -137,13 +159,14 @@
     h.textContent = zip ? ($("pw").value ? "Файлы будут зашифрованы AES-256" : "") : "Пароль есть только у ZIP";
     confirmReplace = false;
     $("ok").textContent = "Создать";
+    showEstimate();
   }
   seg($("format"), S.formats, format, (v) => {
     format = v;
     $("name").value = stripExt($("name").value) + v;
     refresh();
   });
-  seg($("level"), S.levels, level, (v) => { level = v; });
+  seg($("level"), S.levels, level, (v) => { level = v; showEstimate(); });
 
   $("pw").oninput = refresh;
   $("name").oninput = refresh;

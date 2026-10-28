@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -149,7 +150,26 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 	}
 	b, _ := json.Marshal(init)
 	w.SetHtml(strings.Replace(packHTML, "<script>", "<script>window.INIT="+string(b)+";", 1))
+
+	// примерный размер архива считается в фоне, пока окно открыто
+	ctx, cancel := context.WithCancel(context.Background())
+	var estMu sync.Mutex
+	go func() {
+		est, err := estimatePack(ctx, sources)
+		if err != nil {
+			return
+		}
+		b, _ := json.Marshal(est)
+		estMu.Lock()
+		defer estMu.Unlock()
+		if ctx.Err() == nil {
+			w.Dispatch(func() { w.Eval("onEstimate(" + string(b) + ")") })
+		}
+	}()
 	w.Run()
+	estMu.Lock()
+	cancel()
+	estMu.Unlock()
 	if ok {
 		_ = cfg.Save()
 	}
