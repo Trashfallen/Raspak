@@ -91,7 +91,7 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 		AutoFocus: true,
 		WindowOptions: webview2.WindowOptions{
 			Title: "Добавить в архив - " + appName, IconId: 1, Center: true,
-			Width: uint(500 * scale), Height: uint(450 * scale),
+			Width: uint(500 * scale), Height: uint(470 * scale),
 		},
 	})
 	if w == nil {
@@ -103,7 +103,7 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 		return CompressOptions{Out: packName(sources, ".zip"), Format: ".zip", Level: LevelNormal}, true
 	}
 	h := uintptr(w.Window())
-	w.SetSize(int(480*scale), int(400*scale), webview2.HintFixed)
+	w.SetSize(int(480*scale), int(420*scale), webview2.HintFixed)
 	setDarkTitle(h, systemDark())
 	if owner != nil {
 		// поверх главного окна, а оно на это время недоступно

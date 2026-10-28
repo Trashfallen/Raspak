@@ -53,6 +53,8 @@
   .eye:hover { background: var(--seg); }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; }
   .hint.warn { color: var(--warn); }
+  .note { font-size: 12px; color: var(--muted); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note:empty { display: none; }
   footer { margin-top: auto; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
   .est { margin-right: auto; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .est b { color: var(--text); font-weight: 600; }
@@ -81,15 +83,18 @@
     <div class="where"><span id="dir"></span><a id="change">Изменить</a></div>
   </div>
 
-  <div class="row">
-    <div>
-      <span class="label">Формат</span>
-      <div class="seg" id="format"></div>
+  <div>
+    <div class="row">
+      <div>
+        <span class="label">Формат</span>
+        <div class="seg" id="format"></div>
+      </div>
+      <div>
+        <span class="label">Сжатие</span>
+        <div class="seg" id="level"></div>
+      </div>
     </div>
-    <div>
-      <span class="label">Сжатие</span>
-      <div class="seg" id="level"></div>
-    </div>
+    <div class="note" id="note"></div>
   </div>
 
   <div>
@@ -155,6 +160,10 @@
     if (!est) return;
     const el = $("est");
     if (!est.bytes) { el.textContent = ""; return; }
+    // уровни почти не отличаются: данные уже сжаты или не сжимаются (числа, шум)
+    const fast = est.sizes[format][S.levels[0][0]], max = est.sizes[format][S.max];
+    $("note").textContent = fast && (fast - max) / fast < 0.05
+      ? "Эти файлы на любом уровне сжимаются почти одинаково" : "";
     const size = format === ".zip" && $("pw").value ? est.zipPw : est.sizes[format][level];
     el.innerHTML = "";
     const b = document.createElement("b");
