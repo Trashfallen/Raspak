@@ -27,6 +27,7 @@ func TestEstimatePack(t *testing.T) {
 		{".zip", LevelFast, ""}, {".zip", LevelNormal, ""}, {".zip", LevelMax, ""}, {".zip", LevelNormal, "x"},
 		{".tar.gz", LevelFast, ""}, {".tar.gz", LevelMax, ""},
 		{".tar.zst", LevelFast, ""}, {".tar.zst", LevelNormal, ""}, {".tar.zst", LevelMax, ""}, {".tar.zst", LevelUltra, ""},
+		{".7z", LevelFast, ""}, {".7z", LevelNormal, ""}, {".7z", LevelUltra, ""},
 	} {
 		out := filepath.Join(t.TempDir(), "out"+c.ext)
 		res, err := Compress(context.Background(), src, CompressOptions{Out: out, Format: c.ext, Level: c.level, Password: c.pw}, &Job{})

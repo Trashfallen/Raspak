@@ -12,8 +12,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/klauspost/compress/flate"
 	"github.com/klauspost/compress/zstd"
@@ -90,6 +92,19 @@ func estimatePack(ctx context.Context, sources []string) (packEstimate, error) {
 		est.Sizes[format][level] = size
 		mu.Unlock()
 	}
+	// 7z: на кусках выборки словарь не играет роли, оценка одна на все уровни
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		head := 32 + 64 + 30*int64(len(items))
+		for _, it := range items {
+			head += 2 * int64(len(it.name))
+		}
+		packed, storedPacked := sevenZipPacked(samples), sevenZipPacked(storedSamples)
+		for _, level := range append(levels, LevelUltra) {
+			put(".7z", level, head, packed, storedPacked)
+		}
+	}()
 	for _, level := range levels {
 		wg.Add(3)
 		go func() {
@@ -237,6 +252,33 @@ func tarZstPacked(set sampleSet, level int) int64 {
 		return 0
 	}
 	return tarPacked(set, cw.(*zstd.Encoder))
+}
+
+// sevenZipPacked: куски сжимаются параллельно, каждый со своим словарем.
+func sevenZipPacked(set sampleSet) int64 {
+	parts := set.parts
+	if set.solid && len(parts) > 1 {
+		parts = [][]byte{bytes.Join(parts, nil)}
+	}
+	var (
+		n   atomic.Int64
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, runtime.NumCPU())
+	)
+	for _, p := range parts {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			c, err := lzma2Encode(p, sevenZipConfig(LevelNormal).dict)
+			if err != nil {
+				c = p
+			}
+			n.Add(int64(len(c)))
+		}()
+	}
+	wg.Wait()
+	return n.Load()
 }
 
 type countWriter int64

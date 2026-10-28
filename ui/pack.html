@@ -35,10 +35,10 @@
   .where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
   a { color: var(--accent); cursor: pointer; flex: none; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .row { display: grid; grid-template-columns: 1fr 1.45fr; gap: 14px; }
+  .row { display: grid; grid-template-columns: 1.15fr 1.3fr; gap: 14px; }
   .seg { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--seg); }
   .seg button {
-    flex: 1; border: 0; padding: 6px 0; border-radius: 6px; background: transparent;
+    flex: 1 1 auto; border: 0; padding: 6px 8px; border-radius: 6px; background: transparent; white-space: nowrap;
     color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer;
   }
   .seg button:hover:not(.on) { background: color-mix(in srgb, var(--card) 45%, transparent); }
@@ -137,10 +137,10 @@
     }
   }
   function levels() {
-    const zst = format === ".tar.zst";
-    if (!zst && level === S.ultra) level = S.max;
+    const ok = S.ultraIn.includes(format);
+    if (!ok && level === S.ultra) level = S.max;
     seg($("level"), S.levels, level, (v) => { level = v; showEstimate(); }, {
-      [S.ultra]: [zst ? "Сильнее всего, ищет повторы между файлами. Нужно больше памяти" : "Только для TAR.ZST", !zst],
+      [S.ultra]: [ok ? "Сильнее всего, ищет повторы между файлами. Нужно больше памяти" : "Только для 7Z и TAR.ZST", !ok],
     });
   }
   const exts = S.formats.map((f) => f[0]);

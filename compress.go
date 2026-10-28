@@ -1,6 +1,6 @@
 package main
 
-// Создание архивов: zip (с паролем - AES-256), tar.gz, tar.zst.
+// Создание архивов: zip (с паролем - AES-256), 7z, tar.gz, tar.zst.
 //
 // zip без пароля собирается параллельно: файлы до 64 МБ сжимаются в памяти
 // пулом горутин, а пишутся в архив по порядку уже готовыми (CreateRaw).
@@ -35,6 +35,7 @@ import (
 // Форматы, которые Raspak умеет создавать.
 var packFormats = []struct{ Name, Ext string }{
 	{"ZIP", ".zip"},
+	{"7Z", ".7z"},
 	{"TAR.GZ", ".tar.gz"},
 	{"TAR.ZST", ".tar.zst"},
 }
@@ -43,7 +44,7 @@ const (
 	LevelFast   = 1
 	LevelNormal = 5
 	LevelMax    = 9
-	LevelUltra  = 12 // только tar.zst: окно 128 МБ находит повторы между файлами
+	LevelUltra  = 12 // только tar.zst и 7z: большое окно находит повторы между файлами
 )
 
 // zstdUltraWindow: больше 128 МБ libzstd (Windows, 7-Zip) без флага не распакует.
@@ -125,7 +126,7 @@ func Compress(ctx context.Context, sources []string, opt CompressOptions, job *J
 	if opt.Level == 0 {
 		opt.Level = LevelNormal
 	}
-	if opt.Level > LevelMax && opt.Format != ".tar.zst" {
+	if opt.Level > LevelMax && opt.Format != ".tar.zst" && opt.Format != ".7z" {
 		opt.Level = LevelMax // у deflate сильнее 9 нет
 	}
 	job.setCurrent("Собираю список файлов")
@@ -152,6 +153,8 @@ func Compress(ctx context.Context, sources []string, opt CompressOptions, job *J
 		err = writeZipEncrypted(ctx, f, items, opt, job)
 	case opt.Format == ".zip":
 		err = writeZip(ctx, f, items, opt, job)
+	case opt.Format == ".7z":
+		err = write7z(ctx, f, items, opt, job)
 	case opt.Format == ".tar.gz" || opt.Format == ".tar.zst":
 		err = writeTar(ctx, f, items, opt, job)
 	default:

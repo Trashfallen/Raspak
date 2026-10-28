@@ -5,6 +5,7 @@ import (
 	"context"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -52,6 +53,7 @@ func TestCompressRoundTrip(t *testing.T) {
 	}{
 		{".zip", "", 0}, {".zip", "секрет", 0}, {".tar.gz", "", 0}, {".tar.zst", "", 0},
 		{".tar.zst", "", LevelUltra}, {".zip", "", LevelUltra}, {".tar.gz", "", LevelUltra}, // у zip и gz - как «Максимум»
+		{".7z", "", LevelFast}, {".7z", "", LevelNormal}, {".7z", "", LevelUltra},
 	} {
 		t.Run(c.ext+c.pw+strconv.Itoa(c.level), func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out"+c.ext)
@@ -166,5 +168,22 @@ func TestMenuVisibility(t *testing.T) {
 	}
 	if got := menuTitle(4, []string{folder}); got != "Добавить в «Фото.zip»" {
 		t.Errorf("title %q", got)
+	}
+}
+
+// 7z от Raspak должен открывать настоящий 7-Zip (если он установлен).
+func TestCompress7zBy7Zip(t *testing.T) {
+	exe := `C:\Program Files\7-Zip\7z.exe`
+	if !fileExists(exe) {
+		t.Skip("нет 7-Zip")
+	}
+	root, _ := makeTree(t)
+	out := filepath.Join(t.TempDir(), "out.7z")
+	if _, err := Compress(context.Background(), []string{root}, CompressOptions{Out: out, Format: ".7z"}, &Job{}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := exec.Command(exe, "t", out).CombinedOutput()
+	if err != nil || !bytes.Contains(b, []byte("Everything is Ok")) {
+		t.Fatalf("7-Zip: %v\n%s", err, b)
 	}
 }
