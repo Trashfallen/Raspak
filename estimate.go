@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/klauspost/compress/flate"
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -76,11 +77,11 @@ func estimatePack(ctx context.Context, sources []string) (packEstimate, error) {
 	)
 	// put переносит сжатие выборки на объем; stored < 0 - уже сжатое как есть
 	put := func(format string, level int, head, packed, storedPacked int64) {
-		size := head + scaleSample(compBytes, samples, packed)
+		size := head + samples.scale(compBytes, packed)
 		if storedPacked < 0 {
 			size += storedBytes
 		} else {
-			size += scaleSample(storedBytes, storedSamples, storedPacked)
+			size += storedSamples.scale(storedBytes, storedPacked)
 		}
 		mu.Lock()
 		if est.Sizes[format] == nil {
@@ -108,16 +109,27 @@ func estimatePack(ctx context.Context, sources []string) (packEstimate, error) {
 	if err := ctx.Err(); err != nil {
 		return est, err
 	}
+	// выигрыш «Ультра» - дальние повторы между файлами, выборка их не видит:
+	// для нее оценка - размер «Максимума», то есть верхняя граница
+	est.Sizes[".tar.zst"][LevelUltra] = est.Sizes[".tar.zst"][LevelMax]
 	// AES-256: соль, проверка пароля и подпись на файл, поле AES в двух заголовках
 	est.ZipPw = est.Sizes[".zip"][LevelNormal] + 50*int64(est.Files)
 	return est, nil
 }
 
-// scaleSample: размер total байт, если они сожмутся как выборка.
-func scaleSample(total int64, samples [][]byte, packed int64) int64 {
+// sampleSet - выборка. solid: файлы целиком и подряд, как в архиве; иначе
+// куски из далеких мест, и в tar они сжимаются каждый сам по себе: одним
+// потоком zstd нашел бы повторы между ними, которых в архиве не увидит.
+type sampleSet struct {
+	parts [][]byte
+	solid bool
+}
+
+// scale: размер total байт, если они сожмутся как выборка.
+func (s sampleSet) scale(total, packed int64) int64 {
 	var raw int64
-	for _, s := range samples {
-		raw += int64(len(s))
+	for _, p := range s.parts {
+		raw += int64(len(p))
 	}
 	if raw == 0 {
 		return total
@@ -127,8 +139,8 @@ func scaleSample(total int64, samples [][]byte, packed int64) int64 {
 
 // estimateSamples читает выборку: мелкие наборы целиком, иначе chunks кусков
 // в равномерно разнесенных по объему точках.
-func estimateSamples(ctx context.Context, items []packItem, total int64, chunks int64) ([][]byte, error) {
-	var samples [][]byte
+func estimateSamples(ctx context.Context, items []packItem, total int64, chunks int64) (sampleSet, error) {
+	var set sampleSet
 	read := func(it packItem, off, n int64) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -144,17 +156,18 @@ func estimateSamples(ctx context.Context, items []packItem, total int64, chunks 
 			return nil
 		}
 		if k > 0 {
-			samples = append(samples, b[:k])
+			set.parts = append(set.parts, b[:k])
 		}
 		return nil
 	}
 	if total <= estimateChunk*chunks && len(items) <= 4*int(chunks) {
+		set.solid = true
 		for _, it := range items {
 			if err := read(it, 0, it.size); err != nil {
-				return nil, err
+				return set, err
 			}
 		}
-		return samples, nil
+		return set, nil
 	}
 	step := total / chunks
 	i, base := 0, int64(0) // файл и его начало в общем объеме
@@ -172,18 +185,18 @@ func estimateSamples(ctx context.Context, items []packItem, total int64, chunks 
 		}
 		lastFile, lastOff = i, off
 		if err := read(it, off, min(estimateChunk, it.size)); err != nil {
-			return nil, err
+			return set, err
 		}
 	}
-	return samples, nil
+	return set, nil
 }
 
 // zipPacked: каждый файл сжимается отдельно, несжимаемое кладется как есть.
-func zipPacked(samples [][]byte, level int) int64 {
+func zipPacked(set sampleSet, level int) int64 {
 	var buf bytes.Buffer
 	fw, _ := flate.NewWriter(&buf, level)
 	var n int64
-	for _, s := range samples {
+	for _, s := range set.parts {
 		buf.Reset()
 		fw.Reset(&buf)
 		_, _ = fw.Write(s)
@@ -193,28 +206,37 @@ func zipPacked(samples [][]byte, level int) int64 {
 	return n
 }
 
-// tarGzPacked: tar сжимается одним потоком.
-func tarGzPacked(samples [][]byte, level int) int64 {
-	var cnt countWriter
-	fw, _ := flate.NewWriter(&cnt, level)
-	for _, s := range samples {
-		_, _ = fw.Write(s)
-	}
-	_ = fw.Close()
-	return int64(cnt)
+type resetWriter interface {
+	io.WriteCloser
+	Reset(io.Writer)
 }
 
-func tarZstPacked(samples [][]byte, level int) int64 {
+// tarPacked: сплошная выборка - одним потоком, куски - каждый отдельно.
+func tarPacked(set sampleSet, cw resetWriter) int64 {
 	var cnt countWriter
-	cw, err := tarCompressor(&cnt, ".tar.zst", level)
-	if err != nil {
-		return 0
-	}
-	for _, s := range samples {
+	cw.Reset(&cnt)
+	for _, s := range set.parts {
 		_, _ = cw.Write(s)
+		if !set.solid {
+			_ = cw.Close()
+			cw.Reset(&cnt)
+		}
 	}
 	_ = cw.Close()
 	return int64(cnt)
+}
+
+func tarGzPacked(set sampleSet, level int) int64 {
+	fw, _ := flate.NewWriter(io.Discard, level)
+	return tarPacked(set, fw)
+}
+
+func tarZstPacked(set sampleSet, level int) int64 {
+	cw, err := tarCompressor(io.Discard, ".tar.zst", level)
+	if err != nil {
+		return 0
+	}
+	return tarPacked(set, cw.(*zstd.Encoder))
 }
 
 type countWriter int64

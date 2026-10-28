@@ -35,7 +35,7 @@
   .where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
   a { color: var(--accent); cursor: pointer; flex: none; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .row { display: grid; grid-template-columns: 1fr 1.12fr; gap: 14px; }
+  .row { display: grid; grid-template-columns: 1fr 1.45fr; gap: 14px; }
   .seg { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--seg); }
   .seg button {
     flex: 1; border: 0; padding: 6px 0; border-radius: 6px; background: transparent;
@@ -43,6 +43,7 @@
   }
   .seg button:hover:not(.on) { background: color-mix(in srgb, var(--card) 45%, transparent); }
   .seg button.on { background: var(--card); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+  .seg button:disabled { opacity: .4; cursor: default; background: transparent; }
   .pw { position: relative; }
   .pw input { padding-right: 40px; }
   .eye {
@@ -116,15 +117,26 @@
   $("dir").textContent = dir;
   $("name").value = S.name;
 
-  function seg(el, items, cur, onPick) {
+  // tips: подсказки и недоступность кнопок, {значение: [подсказка, выключена]}
+  function seg(el, items, cur, onPick, tips = {}) {
     el.innerHTML = "";
     for (const [value, text] of items) {
       const b = document.createElement("button");
       b.textContent = text;
       b.className = value === cur ? "on" : "";
-      b.onclick = () => { onPick(value); seg(el, items, value, onPick); };
+      const [tip, off] = tips[value] || [];
+      if (tip) b.title = tip;
+      b.disabled = !!off;
+      b.onclick = () => { onPick(value); seg(el, items, value, onPick, tips); };
       el.appendChild(b);
     }
+  }
+  function levels() {
+    const zst = format === ".tar.zst";
+    if (!zst && level === S.ultra) level = S.max;
+    seg($("level"), S.levels, level, (v) => { level = v; showEstimate(); }, {
+      [S.ultra]: [zst ? "Сильнее всего, ищет повторы между файлами. Нужно больше памяти" : "Только для TAR.ZST", !zst],
+    });
   }
   const exts = S.formats.map((f) => f[0]);
   function stripExt(n) {
@@ -146,7 +158,7 @@
     const size = format === ".zip" && $("pw").value ? est.zipPw : est.sizes[format][level];
     el.innerHTML = "";
     const b = document.createElement("b");
-    b.textContent = "≈ " + formatSize(size);
+    b.textContent = (level === S.ultra ? "до " : "≈ ") + formatSize(size);
     el.append(b, " из " + formatSize(est.bytes));
   }
   window.onEstimate = (e) => { est = e; showEstimate(); };
@@ -164,9 +176,10 @@
   seg($("format"), S.formats, format, (v) => {
     format = v;
     $("name").value = stripExt($("name").value) + v;
+    levels();
     refresh();
   });
-  seg($("level"), S.levels, level, (v) => { level = v; showEstimate(); });
+  levels();
 
   $("pw").oninput = refresh;
   $("name").oninput = refresh;

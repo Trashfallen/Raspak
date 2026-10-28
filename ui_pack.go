@@ -77,6 +77,9 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 	if level == 0 {
 		level = LevelNormal
 	}
+	if level == LevelUltra && format != ".tar.zst" {
+		level = LevelMax
+	}
 	out := packName(sources, format)
 
 	scale := 1.0
@@ -88,7 +91,7 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 		AutoFocus: true,
 		WindowOptions: webview2.WindowOptions{
 			Title: "Добавить в архив - " + appName, IconId: 1, Center: true,
-			Width: uint(470 * scale), Height: uint(450 * scale),
+			Width: uint(500 * scale), Height: uint(450 * scale),
 		},
 	})
 	if w == nil {
@@ -100,7 +103,7 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 		return CompressOptions{Out: packName(sources, ".zip"), Format: ".zip", Level: LevelNormal}, true
 	}
 	h := uintptr(w.Window())
-	w.SetSize(int(440*scale), int(400*scale), webview2.HintFixed)
+	w.SetSize(int(480*scale), int(400*scale), webview2.HintFixed)
 	setDarkTitle(h, systemDark())
 	if owner != nil {
 		// поверх главного окна, а оно на это время недоступно
@@ -146,7 +149,9 @@ func packDialog(owner walk.Form, sources []string, cfg *Config) (CompressOptions
 		"format":  format,
 		"level":   level,
 		"formats": [][2]string{{".zip", "ZIP"}, {".tar.gz", "TAR.GZ"}, {".tar.zst", "TAR.ZST"}},
-		"levels":  [][2]any{{LevelFast, "Быстро"}, {LevelNormal, "Обычно"}, {LevelMax, "Максимум"}},
+		"levels":  [][2]any{{LevelFast, "Быстро"}, {LevelNormal, "Обычно"}, {LevelMax, "Максимум"}, {LevelUltra, "Ультра"}},
+		"ultra":   LevelUltra,
+		"max":     LevelMax,
 	}
 	b, _ := json.Marshal(init)
 	w.SetHtml(strings.Replace(packHTML, "<script>", "<script>window.INIT="+string(b)+";", 1))

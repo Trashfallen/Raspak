@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -45,10 +46,16 @@ func randBytes(n int) []byte {
 
 func TestCompressRoundTrip(t *testing.T) {
 	root, files := makeTree(t)
-	for _, c := range []struct{ ext, pw string }{{".zip", ""}, {".zip", "секрет"}, {".tar.gz", ""}, {".tar.zst", ""}} {
-		t.Run(c.ext+c.pw, func(t *testing.T) {
+	for _, c := range []struct {
+		ext, pw string
+		level   int
+	}{
+		{".zip", "", 0}, {".zip", "секрет", 0}, {".tar.gz", "", 0}, {".tar.zst", "", 0},
+		{".tar.zst", "", LevelUltra}, {".zip", "", LevelUltra}, {".tar.gz", "", LevelUltra}, // у zip и gz - как «Максимум»
+	} {
+		t.Run(c.ext+c.pw+strconv.Itoa(c.level), func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "out"+c.ext)
-			res, err := Compress(context.Background(), []string{root}, CompressOptions{Out: out, Format: c.ext, Password: c.pw}, &Job{})
+			res, err := Compress(context.Background(), []string{root}, CompressOptions{Out: out, Format: c.ext, Level: c.level, Password: c.pw}, &Job{})
 			if err != nil {
 				t.Fatal(err)
 			}

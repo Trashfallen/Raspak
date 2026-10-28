@@ -26,7 +26,7 @@ func TestEstimatePack(t *testing.T) {
 	}{
 		{".zip", LevelFast, ""}, {".zip", LevelNormal, ""}, {".zip", LevelMax, ""}, {".zip", LevelNormal, "x"},
 		{".tar.gz", LevelFast, ""}, {".tar.gz", LevelMax, ""},
-		{".tar.zst", LevelFast, ""}, {".tar.zst", LevelNormal, ""}, {".tar.zst", LevelMax, ""},
+		{".tar.zst", LevelFast, ""}, {".tar.zst", LevelNormal, ""}, {".tar.zst", LevelMax, ""}, {".tar.zst", LevelUltra, ""},
 	} {
 		out := filepath.Join(t.TempDir(), "out"+c.ext)
 		res, err := Compress(context.Background(), src, CompressOptions{Out: out, Format: c.ext, Level: c.level, Password: c.pw}, &Job{})
@@ -39,6 +39,9 @@ func TestEstimatePack(t *testing.T) {
 		}
 		diff := float64(guess-res.Size) / float64(res.Size)
 		t.Logf("%s/%d pw=%v: оценка %s, на деле %s (%+.1f%%)", c.ext, c.level, c.pw != "", formatSize(guess), formatSize(res.Size), diff*100)
+		if c.level == LevelUltra && diff > 0 {
+			continue // для «Ультра» оценка - верхняя граница
+		}
 		if diff > 0.25 || diff < -0.25 {
 			t.Errorf("%s/%d: оценка %d, на деле %d", c.ext, c.level, guess, res.Size)
 		}

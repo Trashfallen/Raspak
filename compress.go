@@ -43,12 +43,16 @@ const (
 	LevelFast   = 1
 	LevelNormal = 5
 	LevelMax    = 9
+	LevelUltra  = 12 // только tar.zst: окно 128 МБ находит повторы между файлами
 )
+
+// zstdUltraWindow: больше 128 МБ libzstd (Windows, 7-Zip) без флага не распакует.
+const zstdUltraWindow = 128 << 20
 
 type CompressOptions struct {
 	Out      string // путь архива
 	Format   string // ".zip", ".tar.gz", ".tar.zst"
-	Level    int    // LevelFast, LevelNormal, LevelMax
+	Level    int    // LevelFast, LevelNormal, LevelMax, LevelUltra
 	Password string // только zip
 }
 
@@ -120,6 +124,9 @@ func Compress(ctx context.Context, sources []string, opt CompressOptions, job *J
 	var res CompressResult
 	if opt.Level == 0 {
 		opt.Level = LevelNormal
+	}
+	if opt.Level > LevelMax && opt.Format != ".tar.zst" {
+		opt.Level = LevelMax // у deflate сильнее 9 нет
 	}
 	job.setCurrent("Собираю список файлов")
 	items, total, err := collectFiles(ctx, sources, opt.Out)
@@ -452,6 +459,8 @@ func tarCompressor(w io.Writer, format string, level int) (io.WriteCloser, error
 			lvl = zstd.SpeedFastest
 		case LevelMax:
 			lvl = zstd.SpeedBestCompression
+		case LevelUltra:
+			return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedBestCompression), zstd.WithWindowSize(zstdUltraWindow))
 		}
 		return zstd.NewWriter(w, zstd.WithEncoderLevel(lvl), zstd.WithEncoderConcurrency(runtime.NumCPU()))
 	case ".tar":
