@@ -451,7 +451,7 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 			_ = os.Chtimes(dirs[i].path, dirs[i].mod, dirs[i].mod)
 		}
 	}
-	return res, cleanErr(err)
+	return res, cleanErr(realErrAfterSuccess(err, res.Files))
 }
 
 // readAll читает файл архива целиком (size - размер из заголовка).

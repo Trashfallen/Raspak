@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -229,4 +230,31 @@ func TestFormatSize(t *testing.T) {
 		t.Errorf("%v", got)
 	}
 	_ = sort.Strings
+}
+
+// Сбой посреди распаковки архива с паролем: пока ни один файл не вышел -
+// это неверный пароль (спросить снова), после первого удачного - поврежденный
+// файл, пароль больше не спрашивать.
+func TestPasswordGuessAfterSuccess(t *testing.T) {
+	a := &Archive{Password: "secret"}
+	crc := errors.New("checksum error")
+	err := a.mapErr(crc)
+	if !errors.Is(err, errBadPassword) {
+		t.Fatalf("до первого файла ждали неверный пароль, а пришло %v", err)
+	}
+	if got := realErrAfterSuccess(err, 0); !errors.Is(got, errBadPassword) {
+		t.Fatalf("0 файлов: %v", got)
+	}
+	wrapped := fmt.Errorf("%s: %w", "data/big.pak", err)
+	got := realErrAfterSuccess(wrapped, 12)
+	if errors.Is(got, errBadPassword) {
+		t.Fatalf("после 12 файлов пароль спрашивается снова: %v", got)
+	}
+	if !strings.Contains(got.Error(), "data/big.pak") || !strings.Contains(got.Error(), "checksum error") {
+		t.Fatalf("в ошибке нет файла или причины: %v", got)
+	}
+	// явный ответ библиотеки «неверный пароль» не трогаем
+	if got := realErrAfterSuccess(errBadPassword, 12); !errors.Is(got, errBadPassword) {
+		t.Fatalf("явный неверный пароль потерялся: %v", got)
+	}
 }

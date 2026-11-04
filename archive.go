@@ -368,9 +368,30 @@ func (a *Archive) mapErr(err error) error {
 	// с паролем сбой контрольной суммы или распаковки почти всегда значит неверный пароль
 	var pe *fs.PathError
 	if a.Password != "" && !errors.As(err, &pe) {
-		return errBadPassword
+		return &pwGuess{err}
 	}
 	return err
+}
+
+// pwGuess - сбой с паролем, который приняли за неверный пароль по догадке.
+// Если с тем же паролем уже распаковались другие файлы, пароль верный, а
+// файл поврежден - см. realErrAfterSuccess.
+type pwGuess struct{ err error }
+
+func (g *pwGuess) Error() string        { return errBadPassword.Error() }
+func (g *pwGuess) Is(target error) bool { return target == errBadPassword }
+func (g *pwGuess) Unwrap() error        { return g.err }
+
+// realErrAfterSuccess: files файлов уже распаковано - догадка о неверном
+// пароле отменяется, показываем настоящую ошибку вместо нового вопроса о
+// пароле (и распаковки с начала).
+func realErrAfterSuccess(err error, files int) error {
+	var g *pwGuess
+	if files == 0 || !errors.As(err, &g) {
+		return err
+	}
+	msg := strings.Replace(err.Error(), errBadPassword.Error(), "файл поврежден ("+g.err.Error()+")", 1)
+	return errors.New(msg)
 }
 
 // mappedReader переводит ошибки чтения содержимого.
