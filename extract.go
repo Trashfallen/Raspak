@@ -169,7 +169,9 @@ func Extract(ctx context.Context, a *Archive, opt ExtractOptions, job *Job) (Ext
 	create := func(target string, e Entry) (*os.File, bool, error) {
 		const flags = os.O_CREATE | os.O_EXCL | os.O_WRONLY
 		out, err := os.OpenFile(target, flags, 0o666)
-		if err != nil && !fileExists(filepath.Dir(target)) {
+		// нет папки - создать и открыть заново. Не проверять, есть ли она
+		// сейчас: соседний поток мог создать ее уже после нашей неудачи
+		if err != nil && errors.Is(err, os.ErrNotExist) {
 			if err := ensureDir(filepath.Dir(target)); err != nil {
 				return nil, false, err
 			}
