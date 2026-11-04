@@ -36,6 +36,9 @@ type mainWindow struct {
 	suggested string // предложенная папка распаковки; пока поле не меняли - «умная» распаковка
 	homeDir   string // где лежит архив (у вложенного - папка внешнего)
 	update    *release
+
+	dragging    bool   // идет перетаскивание из списка наружу
+	lastDragDir string // временная папка последнего перетаскивания
 }
 
 func runMain(cfg *Config, files []string) {
@@ -110,6 +113,7 @@ func runMain(cfg *Config, files []string) {
 		return
 	}
 	mw.model.dpi = mw.DPI()
+	mw.hookDragOut()
 	mw.tv.SizeChanged().Attach(func() { mw.Synchronize(mw.fitColumns) })
 	mw.tv.KeyDown().Attach(func(k walk.Key) {
 		if k == walk.KeyBack {
@@ -156,6 +160,9 @@ func (mw *mainWindow) openDialog() {
 }
 
 func (mw *mainWindow) onDrop(files []string) {
+	if mw.dragging || mw.isOwnDrag(files) {
+		return // отпустили тащимое из архива над своим же окном
+	}
 	if mw.arc != nil && mw.dropIntoArchive(files) {
 		return
 	}
