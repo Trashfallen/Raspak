@@ -215,6 +215,7 @@ func askPassword(owner walk.Form, name string, wrong bool) (string, bool) {
 	var (
 		dlg      *walk.Dialog
 		edit     *walk.LineEdit
+		show     *walk.CheckBox
 		okBtn    *walk.PushButton
 		cancelBt *walk.PushButton
 		password string
@@ -233,8 +234,13 @@ func askPassword(owner walk.Form, name string, wrong bool) (string, bool) {
 		CancelButton:  &cancelBt,
 		Children: []Widget{
 			Label{Text: text},
-			LineEdit{AssignTo: &edit, PasswordMode: true},
-			CheckBox{Text: "Показать пароль", OnCheckedChanged: func() { edit.SetPasswordMode(!edit.PasswordMode()) }},
+			LineEdit{AssignTo: &edit},
+			// пароль виден сразу: так проще заметить опечатку
+			CheckBox{AssignTo: &show, Text: "Показать пароль", Checked: true, OnCheckedChanged: func() {
+				if edit != nil && show != nil {
+					edit.SetPasswordMode(!show.Checked())
+				}
+			}},
 			Composite{Layout: HBox{MarginsZero: true}, Children: []Widget{
 				HSpacer{},
 				PushButton{AssignTo: &okBtn, Text: "OK", OnClicked: func() {
