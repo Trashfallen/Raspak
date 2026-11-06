@@ -1,84 +1,82 @@
 # Raspak
 
-Распаковщик архивов для Windows: маленькое окно, меню проводника, один exe на Go без установки.
+[Русская версия](README.ru.md)
 
-## Что умеет
+Archive tool for Windows: a small window, Explorer context menu, a single Go exe with no installation.
 
-- форматы: zip, 7z, rar (в том числе многотомные `.part1.rar`), tar, tar.gz/.bz2/.xz/.zst/.lz4, одиночные `.gz`, `.xz`, `.bz2`, `.zst`, `.lz4`, `.br`, `.lz`, тома `.001`, `.002`… (разбиение 7-Zip и Total Commander);
-- архивы с паролем: zip (ZipCrypto и AES), 7z (в том числе со скрытым списком файлов), rar;
-- русские имена в zip из старых архиваторов (cp866);
-- окно: перетащить архив, походить по папкам, открыть файл двойным кликом, распаковать все или выбранное, проверить архив;
-- перетащить файлы и папки из окна в проводник, на рабочий стол или в другую программу (левой или правой кнопкой);
-- «умная» распаковка: если в архиве одна папка, она кладется рядом с архивом как есть, иначе все уходит в папку с именем архива; имена не перезаписываются (`x (2)`);
-- меню проводника: «Распаковать здесь», «Распаковать в…», «Открыть в Raspak», «Проверить архив». В Windows 11 - в новом меню (подменю «Raspak»), в Windows 10 и в «Показать дополнительные параметры» - в классическом;
-- выделили 20 архивов и нажали «Распаковать здесь» - одно окно прогресса на все, а не 20;
-- многотомные архивы: какой том ни открой, распаковка идет с первого по порядку, а выделенные вместе тома одного набора распаковываются один раз. До начала Raspak проверяет, что все тома на месте, и предупреждает о недокачанных (`.part`, `.crdownload`, `.!qB` и т. п.);
-- защита от вредных архивов: пути `..\..\` и `C:\…` не выходят за папку распаковки, ссылки не создаются, имена `CON`, `aux.txt` и символы `<>:"|?*` исправляются;
-- упаковка: правая кнопка на любом файле или папке - «Добавить в «Имя.zip»» сразу или «Добавить в архив…» с маленьким окном (имя, ZIP / 7Z / TAR.GZ / TAR.ZST, сжатие, пароль AES-256 для zip). Окно сразу показывает примерный размер архива. Уровень «Ультра» для 7z и tar.zst - большое окно сжатия, находит повторы между файлами. Выделенное в одной папке - один архив. Файлы можно и перетащить в окно Raspak;
-- добавление в архив: открыть архив в окне, зайти в нужную папку и перетащить туда файлы и папки. Одинаковые имена - вопрос «Заменить?». ZIP дописывается без пересжатия старого (в zip с паролем новые файлы шифруются тем же паролем), TAR, TAR.GZ, TAR.ZST, TAR.XZ и другие сжатые tar пересобираются тем же методом. 7z, rar и многотомные архивы не меняются. Архив подменяется только в конце: отмена или ошибка его не портят;
-- самообновление из релизов GitHub.
+## Features
 
-## Скорость
+- **Formats.** zip, 7z, rar (including multi-volume `.part1.rar`), tar, tar.gz/.bz2/.xz/.zst/.lz4, single `.gz`, `.xz`, `.bz2`, `.zst`, `.lz4`, `.br`, `.lz`, split volumes `.001`, `.002`... (7-Zip and Total Commander).
+- **Passwords.** zip (ZipCrypto and AES), 7z (including encrypted file lists), rar.
+- **Cyrillic names** in zip files from old archivers (cp866).
+- **Window.** Drop an archive, browse folders, open a file by double click, extract everything or a selection, test the archive. Drag files out of the window to Explorer, the desktop or another app.
+- **Smart extraction.** If the archive holds one folder, it goes next to the archive as is; otherwise everything goes into a folder named after the archive. Nothing is overwritten (`x (2)`).
+- **Explorer menu.** "Extract here", "Extract to...", "Open in Raspak", "Test archive". On Windows 11 in the new menu (a "Raspak" submenu), on Windows 10 and under "Show more options" in the classic one.
+- **Batches.** Select 20 archives and press "Extract here" - one progress window for all of them.
+- **Multi-volume archives.** Whichever volume you open, extraction starts from the first one, and volumes of one set selected together are extracted once. Raspak checks that all volumes are there and warns about unfinished downloads (`.part`, `.crdownload`, `.!qB` and so on).
+- **Protection from harmful archives.** Paths like `..\..\` and `C:\...` cannot leave the target folder, links are not created, names like `CON`, `aux.txt` and characters `<>:"|?*` are fixed.
+- **Packing.** Right click on any file or folder: "Add to "Name.zip"" right away, or "Add to archive..." with a small dialog (name, ZIP / 7Z / TAR.GZ / TAR.ZST, level, AES-256 password for zip). The dialog shows the expected archive size. The "Ultra" level for 7z and tar.zst uses a large window and finds repeats across files.
+- **Adding to an archive.** Open the archive, go to a folder and drop files there. ZIP is appended without recompressing old data (new files in a password zip get the same password); tar and compressed tar are rebuilt with the same method. 7z, rar and multi-volume archives are not changed. The archive is replaced only at the end, so a cancel or an error does not damage it.
+- **Updates** from GitHub releases.
 
-- zip распаковывается в несколько потоков: файлы zip независимы.
-- 7z: свой параллельный декодер LZMA2. Многопоточный 7-Zip режет поток на блоки со сбросом словаря, Raspak распаковывает их одновременно и отдает данные по мере готовности. Архив, сжатый в один поток, распаковывается обычным потоковым декодером.
-- rar, tar.*: распаковка в одном потоке, запись файлов параллельно с ней; gzip многопоточный.
-- Папки создаются один раз, существующий файл ловится при открытии, время ставится по открытому файлу.
+## Speed
 
-Замер: 1500 файлов, 286 МБ, тот же диск, по три прогона:
+- zip is extracted in several threads: files in a zip are independent.
+- 7z: its own parallel LZMA2 decoder. Multi-threaded 7-Zip splits the stream into blocks with a dictionary reset; Raspak decodes them at the same time and writes data as soon as it is ready.
+- rar and tar.*: decoding in one thread, file writing runs in parallel; gzip is multi-threaded.
 
-| архив | Raspak | 7-Zip 24 (`7z x`) |
+Benchmark: 1500 files, 286 MB, same disk, three runs each:
+
+| archive | Raspak | 7-Zip 24 (`7z x`) |
 |---|---|---|
-| zip (deflate) | 1,07-1,32 с | 1,16-1,18 с |
-| 7z (LZMA2, многопоточный) | 1,5-1,9 с | 1,19-1,27 с |
-| tar.gz | 1,16-1,32 с | - |
+| zip (deflate) | 1.07-1.32 s | 1.16-1.18 s |
+| 7z (LZMA2, multi-threaded) | 1.5-1.9 s | 1.19-1.27 s |
+| tar.gz | 1.16-1.32 s | - |
 
-Упаковка тех же 286 МБ: zip - 0,11 с (7-Zip `a -tzip -mx5` - 0,9 с), tar.gz - 0,25 с, tar.zst - 0,36 с. zip сжимается на всех ядрах, уже сжатое (jpg, mp4, zip…) кладется без пересжатия.
+Packing the same 286 MB: zip - 0.11 s (7-Zip `a -tzip -mx5` - 0.9 s), tar.gz - 0.25 s, tar.zst - 0.36 s. zip is compressed on all cores; already compressed files (jpg, mp4, zip...) are stored as is.
 
-Дальше упирается в Windows: создание файла (CreateFile и проверка антивирусом) идет почти по очереди и стоит дороже распаковки - 1500 пустых записей по 200 КБ занимают около 0,8 с при любом числе потоков. В 7z остаток разницы - сам LZMA: на Go он примерно вдвое медленнее, чем на C.
+## Windows 11 menu
 
-## Меню Windows 11
+The new Windows 11 context menu shows only extensions from signed MSIX packages. Raspak builds such a package itself when the option is turned on:
 
-Новое меню Windows 11 показывает только расширения из подписанных пакетов MSIX. Raspak делает такой пакет сам, при включении пункта в настройках:
+1. creates a self-signed certificate `CN=Raspak Local` on the PC;
+2. builds a sparse package without the program files (manifest, COM server, images) and signs it;
+3. deletes the private key, so nothing else can be signed with it;
+4. trusts the certificate and registers the package for the current user. If Windows does not trust the user store, it asks for admin rights once.
 
-1. создает на компьютере самоподписанный сертификат `CN=Raspak Local`;
-2. собирает пакет без файлов программы (sparse package: манифест, COM-сервер `Raspak.exe --com-server`, картинки) и подписывает его системной `SignerSignEx2`;
-3. удаляет закрытый ключ: больше этим сертификатом ничего не подписать;
-4. добавляет открытый сертификат в «Доверенные лица» и регистрирует пакет для текущего пользователя (`Add-AppxPackage -ExternalLocation <папка с exe>`). Если Windows не доверяет хранилищу пользователя, один раз спрашивает разрешение администратора (UAC) и кладет сертификат в «Доверенные лица» компьютера.
+Explorer reads the menu at start, so Raspak offers to restart Explorer after installing. Turning the option off removes the package and the certificate.
 
-Проводник читает список пунктов нового меню при старте, поэтому после установки Raspak предлагает перезапустить проводник: окна папок закроются, панель задач на секунду пропадет. Если exe перенести или переименовать, пакет перерегистрируется при следующем запуске. При выключении пункта пакет и сертификат пользователя удаляются.
+## Tech stack
 
-## Установка
+- **Go**, built with `CGO_ENABLED=0`.
+- [lxn/walk](https://github.com/lxn/walk) - the main window with native Windows controls; the packing dialog uses WebView2 ([go-webview2](https://github.com/jchv/go-webview2)).
+- [mholt/archives](https://github.com/mholt/archives), [bodgit/sevenzip](https://github.com/bodgit/sevenzip), [nwaples/rardecode](https://github.com/nwaples/rardecode), [yeka/zip](https://github.com/yeka/zip) - reading archives.
+- [klauspost/compress](https://github.com/klauspost/compress), [pgzip](https://github.com/klauspost/pgzip), [ulikunitz/xz](https://github.com/ulikunitz/xz) - compression.
+- Own parallel LZMA2 decoder and 7z writer.
+- Windows COM and MSIX (sparse package) for the Windows 11 menu.
 
-Скачать `Raspak.exe` из [релизов](https://github.com/Trashfallen/Raspak/releases/latest) и запустить. При первом запуске Raspak спросит, встроиться ли в проводник. Настройки (шестеренка в окне): меню проводника, открытие архивов двойным кликом, открывать ли папку после распаковки, проверка обновлений.
+## Requirements
 
-Данные программы: `%APPDATA%\Raspak`.
+Windows 10 or 11, x64.
 
-Командная строка:
+## Getting started
+
+Download `Raspak.exe` from [Releases](https://github.com/Trashfallen/Raspak/releases/latest) and run it. On the first run Raspak asks whether to add itself to Explorer. Settings (gear button): Explorer menu, opening archives by double click, opening the folder after extraction, update checks. Data is kept in `%APPDATA%\Raspak`.
+
+Command line:
 
 ```bat
-Raspak.exe archive.zip                 :: открыть в окне
-Raspak.exe --extract a.zip b.rar       :: распаковать рядом
-Raspak.exe --extract-to a.zip          :: спросить папку
-Raspak.exe --test a.7z                 :: проверить
+Raspak.exe archive.zip                 :: open in the window
+Raspak.exe --extract a.zip b.rar       :: extract next to the archive
+Raspak.exe --extract-to a.zip          :: ask for a folder
+Raspak.exe --test a.7z                 :: test
 ```
 
-## Разработка
+## Building
 
-Нужен Go (версия в `go.mod`). C-компилятор не нужен: сборка с `CGO_ENABLED=0`.
+Requires Go (version in `go.mod`).
 
-```bat
-build.cmd                 :: dist\Raspak.exe: значок, манифест и версия в ресурсах
+```
+build.cmd        # dist\Raspak.exe
 go test ./...
-go run ./tools/genicon    :: перерисовать assets\icon.ico
 ```
-
-Окно сделано на [lxn/walk](https://github.com/lxn/walk) (родные элементы Windows), архивы читают [mholt/archives](https://github.com/mholt/archives), [bodgit/sevenzip](https://github.com/bodgit/sevenzip), [nwaples/rardecode](https://github.com/nwaples/rardecode) и [yeka/zip](https://github.com/yeka/zip).
-
-Для отладки с отдельной папкой данных: `set RASPAK_HOME=C:\temp\raspak`. Без `-X main.appVersion` программа считает себя версией `dev`: не спрашивает про проводник при первом запуске и не обновляется.
-
-## Выпуск версии
-
-1. Поднять версию в `VERSION`, закоммитить.
-2. `git tag v0.1.1` и `git push origin main v0.1.1`.
-3. GitHub Actions проверит, что тег совпадает с `VERSION`, прогонит тесты, соберет exe и создаст релиз. Установленные копии увидят его сами.
